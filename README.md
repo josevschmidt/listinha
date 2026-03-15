@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Listinha - Rastreador de Preços Inteligente
 
-## Getting Started
+Este é o WebApp **Listinha**, um rastreador de preços histórico com sincronização em tempo real e scanner de notas fiscais (NFC-e) alimentado por IA.
 
-First, run the development server:
+## Pré-requisitos
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Antes de rodar o projeto, você precisa configurar as credenciais no arquivo `.env.local`.
+
+1.  **Firebase**: Crie um projeto no console do Firebase e habilite o **Firestore** e **Google Auth**.
+2.  **Gemini API**: Obtenha uma chave de API no Google AI Studio.
+
+## Configuração
+
+Copie os valores para o arquivo `d:\GitHub\listinha\.env.local`:
+
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=sua-chave
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=seu-projeto.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=seu-projeto
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=seu-projeto.firebasestorage.app
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=seu-id
+NEXT_PUBLIC_FIREBASE_APP_ID=seu-app-id
+
+GEMINI_API_KEY=sua-chave-gemini
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Como Rodar
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1.  Abra o terminal na pasta do projeto: `d:\GitHub\listinha`.
+2.  Instale as dependências (caso não tenha feito):
+    ```bash
+    npm install
+    ```
+3.  Inicie o servidor de desenvolvimento:
+    ```bash
+    npm run dev
+    ```
+4.  Acesse [http://localhost:3000](http://localhost:3000) no seu navegador.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Funcionalidades
+- [x] Login com Google.
+- [x] Listas compartilhadas em tempo real.
+- [x] Scanner de QR Code de notas fiscais.
+- [x] Fuzzy Matching de produtos via IA (Gemini).
+- [x] Histórico de preços por item.
+- [x] PWA (Instalável no celular).
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Estrutura do Projeto
+- `/src/app`: Rotas e páginas do Next.js.
+- `/src/components`: Componentes UI (Shadcn UI).
+- `/src/lib`: Configurações de Firebase e serviços.
+- `/src/contexts`: Contexto de Autenticação.
+- `/public`: Manifesto PWA, ícones e assets.
