@@ -47,33 +47,36 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 z-10">
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="glass border-b sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-xl tracking-tight text-zinc-900 dark:text-zinc-100">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl">
+              L
+            </div>
+            <span className="font-bold text-xl tracking-tight text-foreground">
               Listinha
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden sm:block text-sm text-zinc-500 dark:text-zinc-400">
+            <div className="hidden sm:block text-sm text-muted-foreground font-medium">
               {user.email}
             </div>
-            <Button variant="ghost" size="icon" onClick={logout} title="Sair">
+            <Button variant="ghost" size="icon" onClick={logout} title="Sair" className="rounded-full hover:bg-destructive/10 hover:text-destructive">
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 space-y-8">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-12 space-y-10">
+        <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+            <h1 className="text-4xl font-extrabold tracking-tight text-foreground">
               Suas Listas
             </h1>
-            <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-              Gerencie suas compras e acompanhe os preços.
+            <p className="text-muted-foreground mt-2 text-lg">
+              Gerencie suas compras e acompanhe os preços com inteligência.
             </p>
           </div>
           <CreateListDialog />
@@ -81,29 +84,33 @@ export default function DashboardPage() {
 
         {listsLoading ? (
           <div className="flex justify-center p-12">
-            <div className="w-8 h-8 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+            <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {lists.length === 0 ? (
-              <div className="col-span-full py-12 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50/50 dark:bg-zinc-900/50">
-                <p className="text-zinc-500 dark:text-zinc-400">Você ainda não possui nenhuma lista.</p>
+              <div className="col-span-full py-20 text-center border-2 border-dashed border-muted rounded-3xl bg-muted/20">
+                <p className="text-muted-foreground text-lg">Você ainda não possui nenhuma lista.</p>
               </div>
             ) : (
               lists.map((list) => (
                 <div 
                   key={list.id} 
                   onClick={() => router.push(`/list/${list.id}`)}
-                  className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer flex flex-col h-full"
+                  className="group relative bg-card card-gradient border rounded-3xl p-6 hover:premium-shadow transition-all cursor-pointer flex flex-col h-full overflow-hidden"
                 >
-                  <h3 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100 mb-1 truncate">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <ArrowRight className="w-12 h-12" />
+                  </div>
+                  <h3 className="font-bold text-xl text-foreground mb-2 truncate">
                     {list.name}
                   </h3>
-                  <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-                    Código: <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs">{list.share_code}</span>
+                  <div className="flex items-center gap-2 mb-6">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</span>
+                    <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg text-xs font-semibold">{list.share_code}</span>
                   </div>
-                  <div className="mt-auto flex items-center text-primary text-sm font-medium group-hover:translate-x-1 transition-transform w-fit">
-                    Abrir Lista <ArrowRight className="w-4 h-4 ml-1" />
+                  <div className="mt-auto flex items-center text-primary text-sm font-bold group-hover:gap-2 transition-all">
+                    Visualizar itens <ArrowRight className="w-4 h-4" />
                   </div>
                 </div>
               ))
