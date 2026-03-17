@@ -11,10 +11,10 @@ import { ValidationModal } from "@/app/components/dashboard/ValidationModal";
 export default function ScannerPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const listId = resolvedParams.id;
-  
+
   const { user, loading } = useAuth();
   const router = useRouter();
-  
+
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -29,7 +29,6 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   }, [user, loading, router]);
 
   useEffect(() => {
-    // We only mount the scanner if there's an authenticated user and no scan result yet
     if (!user || scanResult || processing || showModal) return;
 
     function onScanSuccess(decodedText: string) {
@@ -40,22 +39,19 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       processReceiptUrl(decodedText);
     }
 
-    function onScanFailure(error: any) {
-      // Html5QrcodeScanner throws frequent background errors when no QR is found
-      // We generally ignore them to not spam the UI
+    function onScanFailure(_error: any) {
+      // Html5QrcodeScanner fires frequent errors when no QR is visible — ignore them
     }
 
-    // Initialize scanner
     const scanner = new Html5QrcodeScanner(
       "reader",
       { fps: 10, qrbox: { width: 250, height: 250 } },
-      /* verbose= */ false
+      false
     );
-    
+
     scannerRef.current = scanner;
     scanner.render(onScanSuccess, onScanFailure);
 
-    // Cleanup when component unmounts
     return () => {
       if (scannerRef.current) {
         scannerRef.current.clear().catch(console.error);
@@ -66,12 +62,11 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const processReceiptUrl = async (url: string) => {
     setProcessing(true);
     setError(null);
-    
+
     try {
-      // 1. Fetch current pending items from this list to send to AI
       const { collection, getDocs, query, where } = await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
-      
+
       const q = query(
         collection(db, "lists", listId, "items"),
         where("status", "==", "pending")
@@ -86,21 +81,20 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
         throw new Error("Sua lista não tem itens pendentes para cruzar com a nota.");
       }
 
-      // 2. Fetch SEFAZ data
       const sefazRes = await fetch("/api/sefaz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url })
       });
-      
+
       if (!sefazRes.ok) throw new Error("Falha ao extrair dados da nota fiscal.");
       const sefazData = await sefazRes.json();
-      
+
+      if (sefazData.error) throw new Error(sefazData.error);
       if (!sefazData.items || sefazData.items.length === 0) {
         throw new Error("Nenhum item encontrado na nota fiscal.");
       }
 
-      // 3. Match with AI
       const matchRes = await fetch("/api/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,17 +103,24 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
 
       if (!matchRes.ok) throw new Error("Falha ao processar com a IA.");
       const matchData = await matchRes.json();
-      
-      // 4. Show Modal
+
       setValidationData(matchData);
       setProcessing(false);
       setShowModal(true);
-      
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Erro ao processar a nota fiscal.");
       setProcessing(false);
-      setScanResult(null); // Reset to let them scan again
+      setScanResult(null);
+    }
+  };
+
+  const handleValidationOpenChange = (open: boolean) => {
+    setShowModal(open);
+    // If the user dismissed the modal without confirming, allow scanning again
+    if (!open) {
+      setScanResult(null);
     }
   };
 
@@ -127,18 +128,33 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     try {
       setProcessing(true);
       setShowModal(false);
-      
-      const { doc, updateDoc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+
+      const { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
-      
-      // Update each matched item to 'bought' and create a price history record
+
+      const now = new Date();
+      const dateLabel = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+        .replace(".", "")
+        .replace(/^\d+ de /, (m) => m.replace(" de ", " "))
+        // Format: "15 mar" → "15 Mar"
+        .replace(/\b\w/g, c => c.toUpperCase());
+
       for (const match of finalMatches) {
-        // Update item status
-        await updateDoc(doc(db, "lists", listId, "items", match.user_item_id), {
-          status: "bought"
+        const itemRef = doc(db, "lists", listId, "items", match.user_item_id);
+        const itemSnap = await getDoc(itemRef);
+        const existingData = itemSnap.exists() ? itemSnap.data() : {};
+
+        const existingHistory: { date: string; price: number }[] = existingData.priceHistory ?? [];
+        const updatedHistory = [...existingHistory, { date: dateLabel, price: match.price }];
+        const averagePrice = updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length;
+
+        await updateDoc(itemRef, {
+          status: "bought",
+          averagePrice: Math.round(averagePrice * 100) / 100,
+          priceHistory: updatedHistory,
         });
-        
-        // Add to price history
+
+        // Keep audit record in root collection
         await addDoc(collection(db, "price_history"), {
           item_id: match.user_item_id,
           sefaz_description: match.sefaz_name,
@@ -147,10 +163,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           list_id: listId
         });
       }
-      
-      // Go back to the list
+
       router.push(`/list/${listId}`);
-      
+
     } catch (err) {
       console.error("Error saving matches:", err);
       setError("Erro ao salvar os itens.");
@@ -158,6 +173,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       setScanResult(null);
     }
   };
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
@@ -197,12 +213,12 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
                 Aponte a câmera para o QR Code da nota fiscal eletrônica (NFC-e)
               </p>
             </div>
-            
-            <div 
-              id="reader" 
+
+            <div
+              id="reader"
               className="w-full bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800"
             />
-            
+
             {error && (
               <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-sm text-center w-full">
                 {error}
@@ -215,11 +231,11 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
         )}
       </main>
 
-      <ValidationModal 
-        open={showModal} 
-        onOpenChange={setShowModal} 
-        data={validationData} 
-        onConfirm={handleSaveMatches} 
+      <ValidationModal
+        open={showModal}
+        onOpenChange={handleValidationOpenChange}
+        data={validationData}
+        onConfirm={handleSaveMatches}
       />
     </div>
   );

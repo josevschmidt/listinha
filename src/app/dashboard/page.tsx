@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LogOut, ArrowRight } from "lucide-react";
 import { CreateListDialog } from "@/app/components/dashboard/CreateListDialog";
+import { JoinListDialog } from "@/app/components/dashboard/JoinListDialog";
 import { listService, List } from "@/lib/services/listService";
 
 export default function DashboardPage() {
@@ -23,9 +24,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!user) return;
 
-    // Subscribe to lists where the user is the owner
-    const unsubscribe = listService.subscribeToOwnedLists(user.uid, (fetchedLists) => {
-      // Sort by creation date (newest first)
+    // Subscribe to all lists where the user is a member (owned + shared)
+    const unsubscribe = listService.subscribeToMemberLists(user.uid, (fetchedLists) => {
       const sortedLists = fetchedLists.sort((a, b) => {
         const timeA = a.created_at ? ("seconds" in a.created_at ? a.created_at.seconds : a.created_at.getTime()) : 0;
         const timeB = b.created_at ? ("seconds" in b.created_at ? b.created_at.seconds : b.created_at.getTime()) : 0;
@@ -45,6 +45,9 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const ownedLists = lists.filter(l => l.owner_id === user.uid);
+  const sharedLists = lists.filter(l => l.owner_id !== user.uid);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -79,7 +82,10 @@ export default function DashboardPage() {
               Gerencie suas compras e acompanhe os preços com inteligência.
             </p>
           </div>
-          <CreateListDialog />
+          <div className="flex gap-2 flex-wrap">
+            <JoinListDialog />
+            <CreateListDialog />
+          </div>
         </div>
 
         {listsLoading ? (
@@ -87,37 +93,54 @@ export default function DashboardPage() {
             <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {lists.length === 0 ? (
-              <div className="col-span-full py-16 text-center border-2 border-dashed border-muted rounded-3xl bg-muted/20">
-                <p className="text-muted-foreground">Você ainda não possui nenhuma lista.</p>
+          <>
+            <ListGrid lists={ownedLists} onNavigate={(id) => router.push(`/list/${id}`)} emptyMessage="Você ainda não possui nenhuma lista." />
+
+            {sharedLists.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold text-foreground">Listas Compartilhadas</h2>
+                <ListGrid lists={sharedLists} onNavigate={(id) => router.push(`/list/${id}`)} emptyMessage="" />
               </div>
-            ) : (
-              lists.map((list) => (
-                <div
-                  key={list.id}
-                  onClick={() => router.push(`/list/${list.id}`)}
-                  className="group relative bg-card card-gradient border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col h-full overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <ArrowRight className="w-12 h-12" />
-                  </div>
-                  <h3 className="font-bold text-lg text-foreground mb-2 truncate pr-8">
-                    {list.name}
-                  </h3>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</span>
-                    <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg text-xs font-semibold">{list.share_code}</span>
-                  </div>
-                  <div className="mt-auto flex items-center gap-1 text-primary text-sm font-bold group-hover:gap-2 transition-all">
-                    Visualizar itens <ArrowRight className="w-4 h-4" />
-                  </div>
-                </div>
-              ))
             )}
-          </div>
+          </>
         )}
       </main>
+    </div>
+  );
+}
+
+function ListGrid({ lists, onNavigate, emptyMessage }: { lists: List[]; onNavigate: (id: string) => void; emptyMessage: string }) {
+  if (lists.length === 0 && emptyMessage) {
+    return (
+      <div className="col-span-full py-16 text-center border-2 border-dashed border-muted rounded-3xl bg-muted/20">
+        <p className="text-muted-foreground">{emptyMessage}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {lists.map((list) => (
+        <div
+          key={list.id}
+          onClick={() => onNavigate(list.id)}
+          className="group relative bg-card card-gradient border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col h-full overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <ArrowRight className="w-12 h-12" />
+          </div>
+          <h3 className="font-bold text-lg text-foreground mb-2 truncate pr-8">
+            {list.name}
+          </h3>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</span>
+            <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg text-xs font-semibold">{list.share_code}</span>
+          </div>
+          <div className="mt-auto flex items-center gap-1 text-primary text-sm font-bold group-hover:gap-2 transition-all">
+            Visualizar itens <ArrowRight className="w-4 h-4" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

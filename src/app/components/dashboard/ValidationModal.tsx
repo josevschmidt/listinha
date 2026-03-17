@@ -86,12 +86,16 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
     for (const userItemId of Object.keys(manualMatches)) {
       const sefazString = manualMatches[userItemId];
       if (sefazString && sefazString !== "none") {
-        const parsed = JSON.parse(sefazString);
-        finalMatches.push({
-          user_item_id: userItemId,
-          sefaz_name: parsed.sefaz_name,
-          price: parsed.price
-        });
+        try {
+          const parsed = JSON.parse(sefazString);
+          finalMatches.push({
+            user_item_id: userItemId,
+            sefaz_name: parsed.sefaz_name,
+            price: parsed.price
+          });
+        } catch {
+          console.error("Failed to parse manual match data for item:", userItemId);
+        }
       }
     }
 

@@ -1,19 +1,19 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { 
-  User, 
-  onAuthStateChanged, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut 
+import {
+  User,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
@@ -32,12 +32,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
+  // Returns an error message string on failure, or null on success
+  const signInWithGoogle = async (): Promise<string | null> => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (error) {
+      return null;
+    } catch (error: any) {
+      // User closed the popup — not a real error
+      if (
+        error.code === "auth/popup-closed-by-user" ||
+        error.code === "auth/cancelled-popup-request"
+      ) {
+        return null;
+      }
       console.error("Error signing in with Google:", error);
+      if (error.code === "auth/popup-blocked") {
+        return "O popup foi bloqueado pelo navegador. Permita popups para este site e tente novamente.";
+      }
+      if (error.code === "auth/network-request-failed") {
+        return "Sem conexão com a internet. Verifique sua rede e tente novamente.";
+      }
+      return "Falha ao entrar com o Google. Tente novamente.";
     }
   };
 
