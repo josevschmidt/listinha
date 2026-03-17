@@ -1,63 +1,69 @@
-# Deployment Guide: Render.com
+# Deployment Guide: Vercel
 
-Deploying a Next.js app to Render requires setting up a **Web Service**. Unlike Vercel, Render serves the app as a standard Node.js process.
+Este guia explica como fazer o deploy do **Listinha** no Vercel com domínio customizado.
 
-## 1. Initial Deployment (Render)
+## 1. Deploy no Vercel
 
-1. **Dashboard**: Go to [dashboard.render.com](https://dashboard.render.com) and click **"New" > "Web Service"**.
-2. **Connect Repository**: Link your GitHub/Git repository.
-3. **Settings**:
-    - **Language**: `Node`
-    - **Build Command**: `npm install; npm run build`
-    - **Start Command**: `node .next/standalone/server.js` (We've optimized the build for this).
-4. **Environment Variables**: Click the **Advanced** button or go to the **Env Vars** tab. Copy all variables from your [.env.local](file:///d:/GitHub/listinha/.env.local) (Firebase keys, etc.).
-5. **Deploy**: Click **Create Web Service**.
+1. Acesse [vercel.com](https://vercel.com) e faça login com sua conta GitHub.
+2. Clique em **"Add New..." > "Project"**.
+3. Selecione o repositório **listinha** e clique em **"Import"**.
+4. O Vercel detecta automaticamente que é um projeto Next.js. Não altere as configurações de build.
+5. Antes de clicar em **"Deploy"**, adicione as **variáveis de ambiente** (próximo passo).
 
-## 2. Configuring your Subdomain
+## 2. Variáveis de Ambiente
 
-To use `listinha.josevschmidt.com.br`:
+Na tela de import (ou em **Settings > Environment Variables** depois), adicione:
 
-1. **Render Settings**: In your service dashboard, go to the **Settings** tab and scroll down to **Custom Domains**.
-2. **Add Domain**: Add `listinha.josevschmidt.com.br`.
-3. **DNS Configuration**: Render will give you instructions. Usually:
-    - **Type**: `CNAME`
-    - **Name/Host**: `listinha`
-    - **Value/Target**: `your-service-name.onrender.com`
-
-## 3. Firebase Security (CRITICAL)
-
-Since you are using Firebase Authentication, you MUST authorize the new domain:
-
-1. **Firebase Console**: [console.firebase.google.com](https://console.firebase.google.com).
-2. **Authentication**: Go to **Settings > Authorized Domains**.
-3. **Add Domain**: Add `listinha.josevschmidt.com.br`. 
+| Variável | Valor |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Sua API key do Firebase |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | `seu-projeto.firebaseapp.com` |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | ID do seu projeto Firebase |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | `seu-projeto.firebasestorage.app` |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Sender ID do Firebase |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | App ID do Firebase |
+| `GEMINI_API_KEY` | Sua chave da API Gemini |
 
 > [!IMPORTANT]
-> If you don't do this, Google Login will fail with a "domain not authorized" error.
+> As variáveis `NEXT_PUBLIC_*` são embutidas no JavaScript durante o build. Elas **devem existir antes do deploy**, caso contrário o Firebase não funciona.
 
-## 4. Performance Tip
-I've added `output: "standalone"` to your [next.config.ts](file:///d:/GitHub/listinha/next.config.ts). This makes the build significantly smaller and faster to boot up on Render.
+## 3. Domínio Customizado
 
-## 5. CI/CD with GitHub Actions
+Para usar `listinha.josevschmidt.com.br`:
 
-While Render has native auto-deploy, using GitHub Actions allows you to run tests and linting **before** a deployment is triggered.
-
-### 1. Get the Deploy Hook
-1. Go to your **Render Dashboard**.
-2. Go to **Settings > Deploy Hook**.
-3. Copy the URL. It looks like `https://api.render.com/deploy/srv-...`.
-
-### 2. Add Secret to GitHub
-1. In your GitHub repository, go to **Settings > Secrets and variables > Actions**.
-2. Click **New repository secret**.
-3. Name: `RENDER_DEPLOY_HOOK`
-4. Value: Paste the URL from Render.
-
-### 3. Create the Workflow
-I have created a sample workflow for you at `.github/workflows/deploy.yml`. 
-Every time you push to `main`, GitHub will:
-1. Run `lint` and `build` to check for errors.
-2. If successful, it will ping Render to start the deployment.
+1. No Vercel, vá em **Settings > Domains**.
+2. Adicione `listinha.josevschmidt.com.br`.
+3. Configure o DNS no seu provedor de domínio:
+    - **Tipo**: `CNAME`
+    - **Nome/Host**: `listinha`
+    - **Valor/Target**: `cname.vercel-dns.com`
+4. O Vercel provisiona o certificado SSL automaticamente.
 
 > [!TIP]
-> Once this is set up, you should disable **"Auto-Deploy"** in the Render Settings to ensure deployments only happen if your GitHub Action passes.
+> Se você já tinha um CNAME apontando para o Render (`*.onrender.com`), **atualize-o** para `cname.vercel-dns.com`.
+
+## 4. Firebase Authentication (OBRIGATÓRIO)
+
+Você **deve** autorizar o domínio no Firebase para que o login Google funcione:
+
+1. Acesse o [Firebase Console](https://console.firebase.google.com).
+2. Vá em **Authentication > Settings > Authorized Domains**.
+3. Adicione `listinha.josevschmidt.com.br`.
+4. Adicione também o domínio gerado pelo Vercel (ex: `listinha-xxxx.vercel.app`).
+
+> [!IMPORTANT]
+> Sem isso, o Google Login vai falhar com erro "domain not authorized".
+
+## 5. CI/CD
+
+O Vercel faz build e deploy automaticamente a cada push na branch `main`. Não é necessário webhook ou GitHub Actions para deploy.
+
+Um workflow de CI (`.github/workflows/ci.yml`) está configurado para rodar lint em pull requests, garantindo qualidade antes do merge.
+
+## 6. Limpeza do Render (opcional)
+
+Se você estava usando o Render anteriormente:
+
+1. Acesse [dashboard.render.com](https://dashboard.render.com).
+2. Delete o Web Service do Listinha.
+3. Remova o secret `RENDER_DEPLOY_HOOK` do GitHub (Settings > Secrets).
