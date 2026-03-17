@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [lists, setLists] = useState<List[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
+  const [listsError, setListsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -25,13 +26,19 @@ export default function DashboardPage() {
     if (!user) return;
 
     // Subscribe to all lists where the user is a member (owned + shared)
-    const unsubscribe = listService.subscribeToMemberLists(user.uid, (fetchedLists) => {
+    const unsubscribe = listService.subscribeToMemberLists(user.uid, (fetchedLists, error) => {
+      if (error) {
+        setListsError("Não foi possível carregar suas listas. Verifique sua conexão e tente novamente.");
+        setListsLoading(false);
+        return;
+      }
       const sortedLists = fetchedLists.sort((a, b) => {
         const timeA = a.created_at ? ("seconds" in a.created_at ? a.created_at.seconds : a.created_at.getTime()) : 0;
         const timeB = b.created_at ? ("seconds" in b.created_at ? b.created_at.seconds : b.created_at.getTime()) : 0;
         return timeB - timeA;
       });
       setLists(sortedLists);
+      setListsError(null);
       setListsLoading(false);
     });
 
@@ -91,6 +98,10 @@ export default function DashboardPage() {
         {listsLoading ? (
           <div className="flex justify-center p-12">
             <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          </div>
+        ) : listsError ? (
+          <div className="py-16 text-center border-2 border-dashed border-destructive/30 rounded-3xl bg-destructive/5">
+            <p className="text-destructive font-medium">{listsError}</p>
           </div>
         ) : (
           <>

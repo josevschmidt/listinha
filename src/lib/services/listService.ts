@@ -52,7 +52,7 @@ export const listService = {
   },
 
   // Listen to lists where the user is the owner
-  subscribeToOwnedLists(userId: string, callback: (lists: List[]) => void) {
+  subscribeToOwnedLists(userId: string, callback: (lists: List[], error?: Error) => void) {
     const q = query(
       collection(db, "lists"),
       where("owner_id", "==", userId)
@@ -64,11 +64,14 @@ export const listService = {
         ...doc.data()
       })) as List[];
       callback(lists);
+    }, (error) => {
+      console.error("Error subscribing to owned lists:", error);
+      callback([], error);
     });
   },
 
   // Listen to all lists where user is a member (includes owned + shared)
-  subscribeToMemberLists(userId: string, callback: (lists: List[]) => void) {
+  subscribeToMemberLists(userId: string, callback: (lists: List[], error?: Error) => void) {
     const q = query(
       collection(db, "lists"),
       where("member_ids", "array-contains", userId)
@@ -80,6 +83,9 @@ export const listService = {
         ...doc.data()
       })) as List[];
       callback(lists);
+    }, (error) => {
+      console.error("Error subscribing to member lists:", error);
+      callback([], error);
     });
   },
 
