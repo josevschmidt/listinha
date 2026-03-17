@@ -146,7 +146,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="glass border-b sticky top-0 z-20 w-full">
-        <div className="w-full max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="w-full max-w-2xl mx-auto px-5 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 overflow-hidden flex-1">
             <Button variant="ghost" size="icon" onClick={() => router.push("/dashboard")} className="mr-1 shrink-0 rounded-full">
               <ArrowLeft className="w-5 h-5" />
@@ -164,16 +164,16 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 py-8 flex flex-col items-stretch">
+      <main className="flex-1 w-full max-w-2xl mx-auto px-5 py-6 flex flex-col items-stretch">
         {/* Share Code Section */}
-        <div className="bg-primary/10 text-primary p-4 rounded-2xl text-sm flex items-center justify-between mb-8 border border-primary/20">
+        <div className="bg-primary/10 text-primary p-4 rounded-2xl text-sm flex items-center justify-between mb-6 border border-primary/20">
           <span className="font-medium">
             Convide pessoas usando o código: <strong className="font-mono bg-white/50 dark:bg-black/20 px-2 py-1 rounded-lg ml-1">{list?.share_code}</strong>
           </span>
         </div>
 
         {/* Items List */}
-        <div className="flex-1 space-y-1 mb-24 overflow-y-auto">
+        <div className="flex-1 space-y-2 mb-28 overflow-y-auto">
           {items.length === 0 ? (
             <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center text-muted-foreground/30">
@@ -185,7 +185,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             items.map((item) => (
               <div 
                 key={item.id} 
-                className={`flex items-center justify-between p-2 px-3 rounded-xl border transition-all duration-200 ${
+                className={`flex items-center justify-between p-3 px-4 rounded-xl border transition-all duration-200 ${
                   item.status === "bought" 
                     ? "bg-muted/20 border-transparent text-muted-foreground opacity-60 scale-[0.99]" 
                     : "bg-card border-border/50 text-foreground hover:border-primary/30 shadow-sm active:scale-[0.99]"
@@ -302,10 +302,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         </Dialog>
 
         {/* Add Item Form - Fixed at bottom */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent z-10 pointer-events-none">
+        <div className="fixed bottom-0 left-0 right-0 px-5 pt-6 pb-[max(1.25rem,env(safe-area-inset-bottom,1.25rem))] bg-gradient-to-t from-background via-background/95 to-transparent z-10 pointer-events-none">
           <form 
             onSubmit={handleAddItem}
-            className="w-full max-w-2xl mx-auto pointer-events-auto"
+            className="w-full max-w-2xl mx-auto pointer-events-auto px-0"
           >
             <div className="glass p-2 rounded-3xl premium-shadow flex gap-2 border shadow-2xl">
               <Input 
