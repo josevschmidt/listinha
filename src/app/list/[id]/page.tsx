@@ -270,7 +270,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         </div>
 
         {/* Item Details Modal */}
-        <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) cancelEditing(); }}>
+        <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) { cancelEditing(); setSelectedItem(null); } }}>
           <DialogContent className="sm:max-w-[400px] rounded-[2rem] p-0 overflow-hidden border-none premium-shadow">
             <DialogHeader className="p-6 pb-4 bg-primary text-primary-foreground">
               {isEditing ? (

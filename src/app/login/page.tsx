@@ -5,17 +5,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ListChecks } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const { user, signInWithGoogle, loading } = useAuth();
   const router = useRouter();
+  const [signingIn, setSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && !loading) {
       router.push("/dashboard");
     }
   }, [user, loading, router]);
+
+  const handleSignIn = async () => {
+    setError(null);
+    setSigningIn(true);
+    const err = await signInWithGoogle();
+    if (err) setError(err);
+    setSigningIn(false);
+  };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
@@ -36,11 +46,12 @@ export default function LoginPage() {
             </CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="px-8 pb-12 space-y-6">
-          <Button 
-            className="w-full text-lg h-14 rounded-2xl shadow-lg transition-transform active:scale-95 font-bold" 
-            onClick={signInWithGoogle}
+        <CardContent className="px-8 pb-12 space-y-4">
+          <Button
+            className="w-full text-lg h-14 rounded-2xl shadow-lg transition-transform active:scale-95 font-bold"
+            onClick={handleSignIn}
             variant="default"
+            disabled={signingIn}
           >
             <svg className="w-6 h-6 mr-3" viewBox="0 0 24 24" fill="currentColor">
               <path
@@ -64,8 +75,13 @@ export default function LoginPage() {
                 className="opacity-90"
               />
             </svg>
-            Entrar com o Google
+            {signingIn ? "Entrando..." : "Entrar com o Google"}
           </Button>
+
+          {error && (
+            <p className="text-sm text-destructive text-center font-medium px-2">{error}</p>
+          )}
+
           <p className="text-center text-sm text-muted-foreground font-medium max-w-[200px] mx-auto leading-relaxed">
             Uma conta é necessária para sincronizar suas listas.
           </p>
