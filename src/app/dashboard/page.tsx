@@ -49,7 +49,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="glass border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-5 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl">
               L
@@ -69,13 +69,13 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-12 space-y-10">
-        <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center justify-between">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-5 py-8 space-y-8">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-foreground">
+            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-foreground">
               Suas Listas
             </h1>
-            <p className="text-muted-foreground mt-2 text-lg">
+            <p className="text-muted-foreground mt-1.5 text-sm sm:text-lg">
               Gerencie suas compras e acompanhe os preços com inteligência.
             </p>
           </div>
@@ -87,29 +87,29 @@ export default function DashboardPage() {
             <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {lists.length === 0 ? (
-              <div className="col-span-full py-20 text-center border-2 border-dashed border-muted rounded-3xl bg-muted/20">
-                <p className="text-muted-foreground text-lg">Você ainda não possui nenhuma lista.</p>
+              <div className="col-span-full py-16 text-center border-2 border-dashed border-muted rounded-3xl bg-muted/20">
+                <p className="text-muted-foreground">Você ainda não possui nenhuma lista.</p>
               </div>
             ) : (
               lists.map((list) => (
-                <div 
-                  key={list.id} 
+                <div
+                  key={list.id}
                   onClick={() => router.push(`/list/${list.id}`)}
-                  className="group relative bg-card card-gradient border rounded-3xl p-6 hover:premium-shadow transition-all cursor-pointer flex flex-col h-full overflow-hidden"
+                  className="group relative bg-card card-gradient border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col h-full overflow-hidden"
                 >
                   <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                     <ArrowRight className="w-12 h-12" />
                   </div>
-                  <h3 className="font-bold text-xl text-foreground mb-2 truncate">
+                  <h3 className="font-bold text-lg text-foreground mb-2 truncate pr-8">
                     {list.name}
                   </h3>
-                  <div className="flex items-center gap-2 mb-6">
+                  <div className="flex items-center gap-2 mb-4">
                     <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</span>
                     <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg text-xs font-semibold">{list.share_code}</span>
                   </div>
-                  <div className="mt-auto flex items-center text-primary text-sm font-bold group-hover:gap-2 transition-all">
+                  <div className="mt-auto flex items-center gap-1 text-primary text-sm font-bold group-hover:gap-2 transition-all">
                     Visualizar itens <ArrowRight className="w-4 h-4" />
                   </div>
                 </div>
