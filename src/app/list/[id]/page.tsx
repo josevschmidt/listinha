@@ -15,9 +15,11 @@ import {
   TrendingUp,
   Pencil,
   Check,
-  X
+  X,
+  MoreVertical,
+  LogOut as LogOutIcon
 } from "lucide-react";
-import { List } from "@/lib/services/listService";
+import { listService, List } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -63,6 +65,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [editingName, setEditingName] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
   // Auth Guard
   useEffect(() => {
@@ -166,6 +171,23 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
+  const isOwner = list?.owner_id === user?.uid;
+
+  const handleDeleteOrLeaveList = async () => {
+    if (!user || !list) return;
+    setDeleteLoading(true);
+    const result = isOwner
+      ? await listService.deleteList(listId, user.uid)
+      : await listService.leaveList(listId, user.uid);
+
+    if (result.success) {
+      router.push("/dashboard");
+    } else {
+      setDeleteLoading(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const openModal = (item: Item) => {
     setSelectedItem(item);
     setIsEditing(false);
@@ -198,6 +220,33 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               <Camera className="w-4 h-4 mr-2" />
               Escanear
             </Button>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-muted-foreground"
+                onClick={() => setShowMenu(!showMenu)}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+              {showMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[180px]">
+                    <button
+                      className="w-full px-4 py-2.5 text-sm text-left flex items-center gap-2.5 text-destructive hover:bg-destructive/10 transition-colors"
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowDeleteConfirm(true);
+                      }}
+                    >
+                      {isOwner ? <Trash2 className="w-4 h-4" /> : <LogOutIcon className="w-4 h-4" />}
+                      {isOwner ? "Excluir lista" : "Sair da lista"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -365,6 +414,30 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   <Trash2 className="w-5 h-5" />
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete/Leave Confirmation Dialog */}
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogContent className="sm:max-w-[400px] rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-lg">
+                {isOwner ? "Excluir lista" : "Sair da lista"}
+              </DialogTitle>
+              <DialogDescription>
+                {isOwner
+                  ? `Tem certeza que deseja excluir "${list?.name}"? Todos os itens serão removidos permanentemente.`
+                  : `Tem certeza que deseja sair da lista "${list?.name}"? Você precisará do código de convite para entrar novamente.`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={deleteLoading}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteOrLeaveList} disabled={deleteLoading}>
+                {deleteLoading ? "Aguarde..." : isOwner ? "Excluir" : "Sair"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

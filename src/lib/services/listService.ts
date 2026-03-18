@@ -10,7 +10,9 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   arrayUnion,
+  arrayRemove,
   Timestamp
 } from "firebase/firestore";
 
@@ -116,5 +118,55 @@ export const listService = {
     });
 
     return { success: true, listId };
+  },
+
+  // Delete a list (only owner can delete)
+  async deleteList(listId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const listDoc = doc(db, "lists", listId);
+      const snapshot = await getDocs(query(collection(db, "lists"), where("__name__", "==", listId)));
+
+      if (snapshot.empty) {
+        return { success: false, error: "Lista não encontrada." };
+      }
+
+      const listData = snapshot.docs[0].data() as List;
+
+      if (listData.owner_id !== userId) {
+        return { success: false, error: "Apenas o dono da lista pode excluí-la." };
+      }
+
+      // Delete all items in the list
+      const itemsSnapshot = await getDocs(collection(db, "lists", listId, "items"));
+      const deleteItemPromises = itemsSnapshot.docs.map(itemDoc => deleteDoc(itemDoc.ref));
+      await Promise.all(deleteItemPromises);
+
+      // Delete shared_with subcollection
+      const sharedSnapshot = await getDocs(collection(db, "lists", listId, "shared_with"));
+      const deleteSharedPromises = sharedSnapshot.docs.map(sharedDoc => deleteDoc(sharedDoc.ref));
+      await Promise.all(deleteSharedPromises);
+
+      // Delete the list document
+      await deleteDoc(listDoc);
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error deleting list:", error);
+      return { success: false, error: "Erro ao excluir a lista. Tente novamente." };
+    }
+  },
+
+  // Leave a shared list (remove self from members)
+  async leaveList(listId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await updateDoc(doc(db, "lists", listId), {
+        member_ids: arrayRemove(userId)
+      });
+      await deleteDoc(doc(db, "lists", listId, "shared_with", userId));
+      return { success: true };
+    } catch (error) {
+      console.error("Error leaving list:", error);
+      return { success: false, error: "Erro ao sair da lista. Tente novamente." };
+    }
   },
 };
