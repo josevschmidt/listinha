@@ -1,25 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write lists they own or are members of.
-    // Note: exists() cannot be used in list query rules; use member_ids array instead.
     match /lists/{listId} {
-      allow read, write: if request.auth != null && (
-        resource == null ||
+      // Allow any authenticated user to create a new list
+      allow create: if request.auth != null;
+
+      // Allow reading and modifying lists only for owners or members
+      allow read, update, delete: if request.auth != null && (
         request.auth.uid in resource.data.get('member_ids', []) ||
         resource.data.owner_id == request.auth.uid
       );
-      
+
       // Items and shared access subcollections
       match /items/{itemId} {
         allow read, write: if request.auth != null;
       }
-      
+
       match /shared_with/{userId} {
         allow read, write: if request.auth != null;
       }
     }
-    
+
     match /price_history/{historyId} {
       allow read, write: if request.auth != null;
     }
