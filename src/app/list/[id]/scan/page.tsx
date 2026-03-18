@@ -28,37 +28,6 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     }
   }, [user, loading, router]);
 
-  useEffect(() => {
-    if (!user || scanResult || processing || showModal) return;
-
-    function onScanSuccess(decodedText: string) {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(console.error);
-      }
-      setScanResult(decodedText);
-      processReceiptUrl(decodedText);
-    }
-
-    function onScanFailure() {
-      // Html5QrcodeScanner fires frequent errors when no QR is visible — ignore them
-    }
-
-    const scanner = new Html5QrcodeScanner(
-      "reader",
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      false
-    );
-
-    scannerRef.current = scanner;
-    scanner.render(onScanSuccess, onScanFailure);
-
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(console.error);
-      }
-    };
-  }, [user, scanResult, processing, showModal, processReceiptUrl]);
-
   const processReceiptUrl = useCallback(async (url: string) => {
     setProcessing(true);
     setError(null);
@@ -115,6 +84,37 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       setScanResult(null);
     }
   }, [listId]);
+
+  useEffect(() => {
+    if (!user || scanResult || processing || showModal) return;
+
+    function onScanSuccess(decodedText: string) {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(console.error);
+      }
+      setScanResult(decodedText);
+      processReceiptUrl(decodedText);
+    }
+
+    function onScanFailure() {
+      // Html5QrcodeScanner fires frequent errors when no QR is visible — ignore them
+    }
+
+    const scanner = new Html5QrcodeScanner(
+      "reader",
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      false
+    );
+
+    scannerRef.current = scanner;
+    scanner.render(onScanSuccess, onScanFailure);
+
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(console.error);
+      }
+    };
+  }, [user, scanResult, processing, showModal, processReceiptUrl]);
 
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
