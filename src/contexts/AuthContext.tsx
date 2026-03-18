@@ -38,19 +38,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       return null;
-    } catch (error: any) {
+    } catch (error) {
+      const firebaseError = error as { code?: string };
       // User closed the popup — not a real error
       if (
-        error.code === "auth/popup-closed-by-user" ||
-        error.code === "auth/cancelled-popup-request"
+        firebaseError.code === "auth/popup-closed-by-user" ||
+        firebaseError.code === "auth/cancelled-popup-request"
       ) {
         return null;
       }
       console.error("Error signing in with Google:", error);
-      if (error.code === "auth/popup-blocked") {
+      if (firebaseError.code === "auth/popup-blocked") {
         return "O popup foi bloqueado pelo navegador. Permita popups para este site e tente novamente.";
       }
-      if (error.code === "auth/network-request-failed") {
+      if (firebaseError.code === "auth/network-request-failed") {
         return "Sem conexão com a internet. Verifique sua rede e tente novamente.";
       }
       return "Falha ao entrar com o Google. Tente novamente.";

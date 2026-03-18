@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,14 +47,16 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
   const [approvedMatches, setApprovedMatches] = useState<Set<string>>(new Set());
   // State for manual matches: Record<user_item_id, sefaz_name (as stringified json string with price)>
   const [manualMatches, setManualMatches] = useState<Record<string, string>>({});
+  // Track previous data to reset state when new data arrives
+  const [prevData, setPrevData] = useState(data);
 
-  // Initialize approved matches when data loads
-  useEffect(() => {
+  if (data !== prevData) {
+    setPrevData(data);
     if (data?.matched) {
       setApprovedMatches(new Set(data.matched.map(m => m.user_item_id)));
       setManualMatches({});
     }
-  }, [data]);
+  }
 
   if (!data) return null;
 

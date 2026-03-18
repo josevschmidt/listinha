@@ -2,11 +2,11 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, use } from "react";
+import { useCallback, useEffect, useRef, useState, use } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ValidationModal } from "@/app/components/dashboard/ValidationModal";
+import { ValidationModal, AIValidationData } from "@/app/components/dashboard/ValidationModal";
 
 export default function ScannerPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -19,7 +19,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [validationData, setValidationData] = useState<any>(null);
+  const [validationData, setValidationData] = useState<AIValidationData | null>(null);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       processReceiptUrl(decodedText);
     }
 
-    function onScanFailure(_error: any) {
+    function onScanFailure() {
       // Html5QrcodeScanner fires frequent errors when no QR is visible — ignore them
     }
 
@@ -57,9 +57,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
         scannerRef.current.clear().catch(console.error);
       }
     };
-  }, [user, scanResult, processing, showModal]);
+  }, [user, scanResult, processing, showModal, processReceiptUrl]);
 
-  const processReceiptUrl = async (url: string) => {
+  const processReceiptUrl = useCallback(async (url: string) => {
     setProcessing(true);
     setError(null);
 
@@ -108,13 +108,13 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       setProcessing(false);
       setShowModal(true);
 
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError(err.message || "Erro ao processar a nota fiscal.");
+      setError(err instanceof Error ? err.message : "Erro ao processar a nota fiscal.");
       setProcessing(false);
       setScanResult(null);
     }
-  };
+  }, [listId]);
 
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
