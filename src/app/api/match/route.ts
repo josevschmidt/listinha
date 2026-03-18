@@ -71,8 +71,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(jsonMatchData);
     
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini Match Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

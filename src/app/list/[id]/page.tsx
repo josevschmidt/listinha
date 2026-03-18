@@ -17,7 +17,7 @@ import {
   Check,
   X
 } from "lucide-react";
-import { listService, List } from "@/lib/services/listService";
+import { List } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
 import {
   collection,
