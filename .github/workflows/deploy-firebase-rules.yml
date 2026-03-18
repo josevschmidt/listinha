@@ -8,9 +8,20 @@ on:
 
 jobs:
   deploy-rules:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" ]; then
+            echo "::error::NEXT_PUBLIC_FIREBASE_PROJECT_ID secret is not set. Please configure it in repository settings."
+            exit 1
+          fi
+          if [ -z "${{ secrets.FIREBASE_TOKEN }}" ]; then
+            echo "::error::FIREBASE_TOKEN secret is not set. Please configure it in repository settings."
+            exit 1
+          fi
 
       - name: Deploy Firestore Rules
         run: npx firebase-tools deploy --only firestore:rules --token "${{ secrets.FIREBASE_TOKEN }}" --project "${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}"
