@@ -86,7 +86,7 @@ export default function DashboardPage() {
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-5 sm:px-6 py-6 space-y-6">
         {/* Hero section */}
-        <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10 p-5 sm:p-6">
+        <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-5 sm:p-6 shadow-sm">
           <h1 className="text-2xl font-extrabold tracking-tight text-foreground mb-1">
             Suas Listas
           </h1>
