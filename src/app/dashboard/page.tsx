@@ -4,10 +4,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, ArrowRight, ShoppingCart, ListPlus } from "lucide-react";
+import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files } from "lucide-react";
 import { CreateListDialog } from "@/app/components/dashboard/CreateListDialog";
 import { JoinListDialog } from "@/app/components/dashboard/JoinListDialog";
 import { listService, List } from "@/lib/services/listService";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
@@ -112,6 +119,8 @@ export default function DashboardPage() {
           <>
             <ListGrid
               lists={ownedLists}
+              userId={user.uid}
+              userEmail={user.email ?? ""}
               onNavigate={(id) => router.push(`/list/${id}`)}
               emptyMessage="Você ainda não possui nenhuma lista."
             />
@@ -123,6 +132,8 @@ export default function DashboardPage() {
                 </h2>
                 <ListGrid
                   lists={sharedLists}
+                  userId={user.uid}
+                  userEmail={user.email ?? ""}
                   onNavigate={(id) => router.push(`/list/${id}`)}
                   emptyMessage=""
                 />
@@ -137,13 +148,47 @@ export default function DashboardPage() {
 
 function ListGrid({
   lists,
+  userId,
+  userEmail,
   onNavigate,
   emptyMessage,
 }: {
   lists: List[];
+  userId: string;
+  userEmail: string;
   onNavigate: (id: string) => void;
   emptyMessage: string;
 }) {
+  const router = useRouter();
+  const [confirmDialog, setConfirmDialog] = useState<{ list: List; action: "delete" | "leave" } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+
+  const handleDeleteOrLeave = async () => {
+    if (!confirmDialog) return;
+    setActionLoading(true);
+    setActionError(null);
+    const { list, action } = confirmDialog;
+    const result = action === "delete"
+      ? await listService.deleteList(list.id, userId)
+      : await listService.leaveList(list.id, userId);
+    if (result.success) {
+      setConfirmDialog(null);
+    } else {
+      setActionError(result.error ?? "Erro desconhecido.");
+    }
+    setActionLoading(false);
+  };
+
+  const handleDuplicate = async (e: React.MouseEvent, listId: string) => {
+    e.stopPropagation();
+    setDuplicatingId(listId);
+    const result = await listService.duplicateList(listId, userId, userEmail);
+    setDuplicatingId(null);
+    if (result.success && result.listId) router.push(`/list/${result.listId}`);
+  };
+
   if (lists.length === 0 && emptyMessage) {
     return (
       <div className="py-14 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-muted rounded-2xl">
@@ -156,32 +201,79 @@ function ListGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-      {lists.map((list) => (
-        <div
-          key={list.id}
-          onClick={() => onNavigate(list.id)}
-          className="group relative bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer flex flex-col gap-3 overflow-hidden"
-        >
-          {/* Decorative accent */}
-          <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/60 to-transparent rounded-t-2xl" />
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        {lists.map((list) => {
+          const isOwner = list.owner_id === userId;
+          return (
+            <div
+              key={list.id}
+              onClick={() => onNavigate(list.id)}
+              className="group relative bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer flex flex-col gap-3 overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/60 to-transparent rounded-t-2xl" />
 
-          <h3 className="font-bold text-base text-foreground truncate pr-6 leading-tight">
-            {list.name}
-          </h3>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-bold text-base text-foreground truncate leading-tight">{list.name}</h3>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 -mt-1 -mr-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                    onClick={(e) => handleDuplicate(e, list.id)}
+                    title="Duplicar lista"
+                    disabled={duplicatingId === list.id}
+                  >
+                    <Files className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"
+                    onClick={(e) => { e.stopPropagation(); setConfirmDialog({ list, action: isOwner ? "delete" : "leave" }); setActionError(null); }}
+                    title={isOwner ? "Excluir lista" : "Sair da lista"}
+                  >
+                    {isOwner ? <Trash2 className="w-3.5 h-3.5" /> : <LogOutIcon className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Código</span>
-            <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold tracking-wider">
-              {list.share_code}
-            </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Código</span>
+                <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold tracking-wider">
+                  {list.share_code}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 text-primary text-xs font-bold group-hover:gap-2 transition-all mt-auto">
+                Ver itens <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Dialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
+        <DialogContent className="sm:max-w-[400px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">
+              {confirmDialog?.action === "delete" ? "Excluir lista" : "Sair da lista"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmDialog?.action === "delete"
+                ? `Tem certeza que deseja excluir "${confirmDialog?.list.name}"? Todos os itens serão removidos permanentemente.`
+                : `Tem certeza que deseja sair da lista "${confirmDialog?.list.name}"? Você precisará do código de convite para entrar novamente.`}
+            </DialogDescription>
+          </DialogHeader>
+          {actionError && <p className="text-sm text-destructive font-medium">{actionError}</p>}
+          <div className="flex gap-3 justify-end pt-2">
+            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={actionLoading}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteOrLeave} disabled={actionLoading}>
+              {actionLoading ? "Aguarde..." : confirmDialog?.action === "delete" ? "Excluir" : "Sair"}
+            </Button>
           </div>
-
-          <div className="flex items-center gap-1 text-primary text-xs font-bold group-hover:gap-2 transition-all mt-auto">
-            Ver itens <ArrowRight className="w-3.5 h-3.5" />
-          </div>
-        </div>
-      ))}
-    </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

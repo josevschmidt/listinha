@@ -31,7 +31,7 @@ export function JoinListDialog() {
     setError("");
     setLoading(true);
     try {
-      const result = await listService.joinListByCode(code, user.uid);
+      const result = await listService.joinListByCode(code, user.uid, user.email ?? "");
       if (result.success && result.listId) {
         setOpen(false);
         setCode("");
