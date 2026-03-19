@@ -54,7 +54,7 @@ import {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-export const CATEGORIES = [
+const CATEGORIES = [
   "Hortifruti",
   "Carnes",
   "Laticínios",
