@@ -29,6 +29,7 @@ import {
   SlidersHorizontal,
   Undo2,
   UserMinus,
+  Sparkles,
 } from "lucide-react";
 import { listService, List, MemberInfo } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
@@ -144,6 +145,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [addQty, setAddQty] = useState("");
   const [addUnit, setAddUnit] = useState("");
   const [addCategory, setAddCategory] = useState("");
+  const [aiSuggestedCategory, setAiSuggestedCategory] = useState("");
+  const [isCategorizing, setIsCategorizing] = useState(false);
 
   // Undo
   const [undoState, setUndoState] = useState<UndoState | null>(null);
@@ -191,6 +194,33 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [user, listId, router]);
 
+  // ── AI auto-categorize (debounced) ─────────────────────────────────────────
+  useEffect(() => {
+    if (!newItemName.trim() || addCategory) {
+      setAiSuggestedCategory("");
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsCategorizing(true);
+      try {
+        const res = await fetch("/api/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemName: newItemName.trim() }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAiSuggestedCategory(data.category || "");
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        setIsCategorizing(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [newItemName, addCategory]);
+
   // ── Derived ─────────────────────────────────────────────────────────────────
   const isOwner = list?.owner_id === user?.uid;
 
@@ -232,10 +262,12 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
     const name = newItemName.trim();
+    const categoryToSave = addCategory || aiSuggestedCategory;
     setNewItemName("");
     setAddQty("");
     setAddUnit("");
     setAddCategory("");
+    setAiSuggestedCategory("");
     setShowAddExtras(false);
     try {
       await addDoc(collection(db, "lists", listId, "items"), {
@@ -243,7 +275,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         status: "pending",
         ...(addQty && !isNaN(Number(addQty)) && { quantity: Number(addQty) }),
         ...(addUnit && { unit: addUnit }),
-        ...(addCategory && { category: addCategory }),
+        ...(categoryToSave && { category: categoryToSave }),
         created_at: serverTimestamp(),
       });
     } catch (err) {
@@ -765,6 +797,27 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* AI category suggestion */}
+          {(isCategorizing || aiSuggestedCategory) && !addCategory && (
+            <div className="flex items-center gap-1.5 px-3 py-1">
+              <Sparkles className="w-3.5 h-3.5 text-primary/60 shrink-0" />
+              {isCategorizing ? (
+                <span className="text-xs text-muted-foreground">Categorizando...</span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setAddCategory(aiSuggestedCategory)}
+                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full border border-transparent transition-all hover:opacity-80 ${CATEGORY_COLORS[aiSuggestedCategory] || "bg-muted text-muted-foreground"}`}
+                  >
+                    {aiSuggestedCategory}
+                  </button>
+                  <span className="text-[10px] text-muted-foreground">sugestão IA</span>
+                </>
+              )}
             </div>
           )}
 
