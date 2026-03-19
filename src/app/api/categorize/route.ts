@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: { responseMimeType: "application/json" },
     });
 
@@ -35,6 +35,7 @@ Responda APENAS com JSON no formato: { "category": "NomeDaCategoria" }`;
 
     return NextResponse.json(data);
   } catch (error) {
+    console.error("Categorize error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
