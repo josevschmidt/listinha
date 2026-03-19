@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, use } from "react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ValidationModal, AIValidationData } from "@/app/components/dashboard/ValidationModal";
@@ -15,7 +15,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const qrCodeRef = useRef<Html5Qrcode | null>(null);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,37 +88,32 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   useEffect(() => {
     if (!user || scanResult || processing || showModal) return;
 
-    function onScanSuccess(decodedText: string) {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(console.error);
-      }
-      setScanResult(decodedText);
-      processReceiptUrl(decodedText);
-    }
+    const qrCode = new Html5Qrcode("reader");
+    qrCodeRef.current = qrCode;
 
-    function onScanFailure() {
-      // Html5QrcodeScanner fires frequent errors when no QR is visible — ignore them
-    }
-
-    const scanner = new Html5QrcodeScanner(
-      "reader",
+    qrCode.start(
+      { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 250 } },
-      false
-    );
-
-    scannerRef.current = scanner;
-    scanner.render(onScanSuccess, onScanFailure);
+      (decodedText) => {
+        qrCode.stop().catch(console.error);
+        setScanResult(decodedText);
+        processReceiptUrl(decodedText);
+      },
+      () => { /* ignore frequent no-QR-found errors */ }
+    ).catch((err) => {
+      console.error("Camera error:", err);
+      setError("Não foi possível acessar a câmera traseira.");
+    });
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(console.error);
+      if (qrCodeRef.current?.isScanning) {
+        qrCodeRef.current.stop().catch(console.error);
       }
     };
   }, [user, scanResult, processing, showModal, processReceiptUrl]);
 
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
-    // If the user dismissed the modal without confirming, allow scanning again
     if (!open) {
       setScanResult(null);
     }
@@ -136,7 +131,6 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       const dateLabel = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
         .replace(".", "")
         .replace(/^\d+ de /, (m) => m.replace(" de ", " "))
-        // Format: "15 mar" → "15 Mar"
         .replace(/\b\w/g, c => c.toUpperCase());
 
       for (const match of finalMatches) {
@@ -154,7 +148,6 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           priceHistory: updatedHistory,
         });
 
-        // Keep audit record in root collection
         await addDoc(collection(db, "price_history"), {
           item_id: match.user_item_id,
           sefaz_description: match.sefaz_name,
@@ -208,15 +201,13 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           </div>
         ) : (
           <div className="w-full flex flex-col items-center">
-            <div className="mb-6 text-center">
-              <p className="text-zinc-600 dark:text-zinc-300">
-                Aponte a câmera para o QR Code da nota fiscal eletrônica (NFC-e)
-              </p>
-            </div>
+            <p className="text-zinc-600 dark:text-zinc-300 text-center mb-4">
+              Aponte a câmera para o QR Code da nota fiscal eletrônica (NFC-e)
+            </p>
 
             <div
               id="reader"
-              className="w-full bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800"
+              className="w-full rounded-xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800"
             />
 
             {error && (
