@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon } from "lucide-react";
+import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files } from "lucide-react";
 import { CreateListDialog } from "@/app/components/dashboard/CreateListDialog";
 import { JoinListDialog } from "@/app/components/dashboard/JoinListDialog";
 import { listService, List } from "@/lib/services/listService";
@@ -120,6 +120,7 @@ export default function DashboardPage() {
             <ListGrid
               lists={ownedLists}
               userId={user.uid}
+              userEmail={user.email ?? ""}
               onNavigate={(id) => router.push(`/list/${id}`)}
               emptyMessage="Você ainda não possui nenhuma lista."
             />
@@ -132,6 +133,7 @@ export default function DashboardPage() {
                 <ListGrid
                   lists={sharedLists}
                   userId={user.uid}
+                  userEmail={user.email ?? ""}
                   onNavigate={(id) => router.push(`/list/${id}`)}
                   emptyMessage=""
                 />
@@ -147,34 +149,44 @@ export default function DashboardPage() {
 function ListGrid({
   lists,
   userId,
+  userEmail,
   onNavigate,
   emptyMessage,
 }: {
   lists: List[];
   userId: string;
+  userEmail: string;
   onNavigate: (id: string) => void;
   emptyMessage: string;
 }) {
+  const router = useRouter();
   const [confirmDialog, setConfirmDialog] = useState<{ list: List; action: "delete" | "leave" } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const handleDeleteOrLeave = async () => {
     if (!confirmDialog) return;
     setActionLoading(true);
     setActionError(null);
-
     const { list, action } = confirmDialog;
     const result = action === "delete"
       ? await listService.deleteList(list.id, userId)
       : await listService.leaveList(list.id, userId);
-
     if (result.success) {
       setConfirmDialog(null);
     } else {
       setActionError(result.error ?? "Erro desconhecido.");
     }
     setActionLoading(false);
+  };
+
+  const handleDuplicate = async (e: React.MouseEvent, listId: string) => {
+    e.stopPropagation();
+    setDuplicatingId(listId);
+    const result = await listService.duplicateList(listId, userId, userEmail);
+    setDuplicatingId(null);
+    if (result.success && result.listId) router.push(`/list/${result.listId}`);
   };
 
   if (lists.length === 0 && emptyMessage) {
@@ -199,26 +211,31 @@ function ListGrid({
               onClick={() => onNavigate(list.id)}
               className="group relative bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer flex flex-col gap-3 overflow-hidden"
             >
-              {/* Decorative accent */}
               <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/60 to-transparent rounded-t-2xl" />
 
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-bold text-base text-foreground truncate leading-tight">
-                  {list.name}
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 -mt-1 -mr-2 rounded-full text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmDialog({ list, action: isOwner ? "delete" : "leave" });
-                    setActionError(null);
-                  }}
-                  title={isOwner ? "Excluir lista" : "Sair da lista"}
-                >
-                  {isOwner ? <Trash2 className="w-3.5 h-3.5" /> : <LogOutIcon className="w-3.5 h-3.5" />}
-                </Button>
+                <h3 className="font-bold text-base text-foreground truncate leading-tight">{list.name}</h3>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 -mt-1 -mr-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                    onClick={(e) => handleDuplicate(e, list.id)}
+                    title="Duplicar lista"
+                    disabled={duplicatingId === list.id}
+                  >
+                    <Files className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"
+                    onClick={(e) => { e.stopPropagation(); setConfirmDialog({ list, action: isOwner ? "delete" : "leave" }); setActionError(null); }}
+                    title={isOwner ? "Excluir lista" : "Sair da lista"}
+                  >
+                    {isOwner ? <Trash2 className="w-3.5 h-3.5" /> : <LogOutIcon className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -236,7 +253,6 @@ function ListGrid({
         })}
       </div>
 
-      {/* Confirmation Dialog */}
       <Dialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
         <DialogContent className="sm:max-w-[400px] rounded-2xl">
           <DialogHeader>
@@ -249,18 +265,10 @@ function ListGrid({
                 : `Tem certeza que deseja sair da lista "${confirmDialog?.list.name}"? Você precisará do código de convite para entrar novamente.`}
             </DialogDescription>
           </DialogHeader>
-          {actionError && (
-            <p className="text-sm text-destructive font-medium">{actionError}</p>
-          )}
+          {actionError && <p className="text-sm text-destructive font-medium">{actionError}</p>}
           <div className="flex gap-3 justify-end pt-2">
-            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={actionLoading}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteOrLeave}
-              disabled={actionLoading}
-            >
+            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={actionLoading}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteOrLeave} disabled={actionLoading}>
               {actionLoading ? "Aguarde..." : confirmDialog?.action === "delete" ? "Excluir" : "Sair"}
             </Button>
           </div>

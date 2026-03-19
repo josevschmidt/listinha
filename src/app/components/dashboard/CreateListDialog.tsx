@@ -29,7 +29,7 @@ export function CreateListDialog() {
 
     try {
       setLoading(true);
-      const listId = await listService.createList(name, user.uid);
+      const listId = await listService.createList(name, user.uid, user.email ?? "");
       setOpen(false);
       setName("");
       router.push(`/list/${listId}`);
