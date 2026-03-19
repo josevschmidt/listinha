@@ -35,6 +35,7 @@ Responda APENAS com JSON no formato: { "category": "NomeDaCategoria" }`;
 
     return NextResponse.json(data);
   } catch (error) {
+    console.error("Categorize error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
