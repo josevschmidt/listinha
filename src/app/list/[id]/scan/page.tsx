@@ -21,6 +21,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const [error, setError] = useState<string | null>(null);
   const [validationData, setValidationData] = useState<AIValidationData | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [emissionDate, setEmissionDate] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -58,6 +59,10 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       if (sefazData.error) throw new Error(sefazData.error);
       if (!sefazData.items || sefazData.items.length === 0) {
         throw new Error("Nenhum item encontrado na nota fiscal.");
+      }
+
+      if (sefazData.emission_date) {
+        setEmissionDate(sefazData.emission_date);
       }
 
       const matchRes = await fetch("/api/match", {
@@ -120,11 +125,19 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       setProcessing(true);
       setShowModal(false);
 
-      const { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+      const { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp, Timestamp } = await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
 
-      const now = new Date();
-      const dateLabel = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+      // Use emission date from the receipt instead of current date
+      let dateForLabel: Date;
+      if (emissionDate) {
+        // emissionDate is "DD/MM/YYYY"
+        const [day, month, year] = emissionDate.split("/").map(Number);
+        dateForLabel = new Date(year, month - 1, day);
+      } else {
+        dateForLabel = new Date();
+      }
+      const dateLabel = dateForLabel.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
         .replace(".", "")
         .replace(/^\d+ de /, (m) => m.replace(" de ", " "))
         .replace(/\b\w/g, c => c.toUpperCase());
@@ -148,7 +161,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           item_id: match.user_item_id,
           sefaz_description: match.sefaz_name,
           price: match.price,
-          date: serverTimestamp(),
+          date: emissionDate ? Timestamp.fromDate(dateForLabel) : serverTimestamp(),
           list_id: listId
         });
       }
