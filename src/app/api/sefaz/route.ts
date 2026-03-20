@@ -79,6 +79,38 @@ function tryParseInfCpl($: cheerio.CheerioAPI): ParsedItem[] {
   return items;
 }
 
+function parseEmissionDate($: cheerio.CheerioAPI): string | null {
+  // Look for emission date in the HTML — common patterns across SEFAZ portals
+  const body = $("body").text();
+
+  // Pattern: "Emissão: DD/MM/YYYY HH:MM:SS" or "Data de Emissão: DD/MM/YYYY"
+  const match = body.match(/Emiss[ãa]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+  if (match) return match[1]; // Returns "DD/MM/YYYY"
+
+  // Pattern: "Data Emissão DD/MM/YYYY"
+  const match2 = body.match(/Data\s+Emiss[ãa]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+  if (match2) return match2[1];
+
+  return null;
+}
+
+function parseEmissionDateFromAccessKey(url: string): string | null {
+  // NFC-e access key is 44 digits. Positions 3-6 contain YYMM (year+month).
+  // This is a fallback — only gives year+month, no day.
+  const keyMatch = url.match(/[?&]p=(\d{44})/);
+  if (!keyMatch) return null;
+
+  const key = keyMatch[1];
+  const yy = key.substring(2, 4);
+  const mm = key.substring(4, 6);
+  const year = 2000 + parseInt(yy, 10);
+  const month = parseInt(mm, 10);
+
+  if (month < 1 || month > 12) return null;
+  // Return first day of month as fallback
+  return `01/${mm}/${year}`;
+}
+
 function tryParseGenericTable($: cheerio.CheerioAPI): ParsedItem[] {
   // Generic fallback: scan all tables looking for rows with a name + price pattern
   const items: ParsedItem[] = [];
@@ -156,7 +188,10 @@ export async function POST(request: Request) {
       $(".txtTopo, #x-nomeEmit, .nomeEmpresa, h4").first().text().trim() ||
       "Desconhecido";
 
-    return NextResponse.json({ items, store_name: storeName });
+    // Extract emission date from HTML, fallback to access key
+    const emissionDate = parseEmissionDate($) || parseEmissionDateFromAccessKey(url);
+
+    return NextResponse.json({ items, store_name: storeName, emission_date: emissionDate });
 
   } catch (error) {
     console.error("SEFAZ Extractor Error:", error);
