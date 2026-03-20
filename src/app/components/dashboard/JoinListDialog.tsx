@@ -53,12 +53,14 @@ export function JoinListDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); setError(""); }}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="w-full sm:w-auto h-11 px-6">
-          <LogIn className="w-5 h-5 mr-2" />
-          Entrar com Código
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button variant="outline" className="w-full sm:w-auto h-11 px-6">
+            <LogIn className="w-5 h-5 mr-2" />
+            Entrar com Código
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-[425px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
