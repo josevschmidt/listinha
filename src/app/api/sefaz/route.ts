@@ -14,16 +14,29 @@ function parsePrice(text: string): number | null {
 }
 
 function tryParseTabResult($: cheerio.CheerioAPI): ParsedItem[] {
-  // Most common: <table id="tabResult"> — used in SP, PR, SC, GO and others
+  // Most common: <table id="tabResult"> — used in SP, PR, SC, GO, RS and others
   const items: ParsedItem[] = [];
   $("#tabResult tr").each((_, row) => {
     const cells = $(row).find("td");
-    if (cells.length < 3) return;
-    // Column layout: [seq, description, qty, unit, unit_price, total]
-    const name = $(cells[1]).text().trim();
-    const priceText = $(cells[cells.length - 1]).text().trim(); // last column = total
+    if (cells.length < 2) return;
+
+    let name: string;
+    let price: number | null;
+
+    if (cells.length >= 3) {
+      // Multi-column layout: [seq, description, qty, unit, unit_price, total]
+      name = $(cells[1]).text().trim();
+      price = parsePrice($(cells[cells.length - 1]).text().trim());
+    } else {
+      // 2-column layout (RS/SVRS): name in .txtTit span, price in .valor span
+      name = $(cells.first()).find(".txtTit").first().text().trim();
+      const valorSpan = $(row).find(".valor");
+      price = valorSpan.length
+        ? parsePrice(valorSpan.first().text().trim())
+        : parsePrice($(cells.last()).text().trim());
+    }
+
     if (!name || name.length < 2) return;
-    const price = parsePrice(priceText);
     if (!price) return;
     items.push({ name, price, original_text: $(row).text().trim() });
   });
