@@ -33,21 +33,17 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     setError(null);
 
     try {
-      const { collection, getDocs, query, where } = await import("firebase/firestore");
+      const { collection, getDocs } = await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
 
-      const q = query(
-        collection(db, "lists", listId, "items"),
-        where("status", "==", "pending")
-      );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await getDocs(collection(db, "lists", listId, "items"));
       const userList = querySnapshot.docs.map(doc => ({
         id: doc.id,
         name: doc.data().name
       }));
 
       if (userList.length === 0) {
-        throw new Error("Sua lista não tem itens pendentes para cruzar com a nota.");
+        throw new Error("Sua lista não tem itens para cruzar com a nota.");
       }
 
       const sefazRes = await fetch("/api/sefaz", {
