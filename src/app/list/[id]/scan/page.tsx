@@ -39,12 +39,22 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     }
   }, [user, loading, router]);
 
-  // Stop QR scanner when switching modes
-  useEffect(() => {
-    if (scanMode !== "qr" && qrCodeRef.current?.isScanning) {
-      qrCodeRef.current.stop().catch(console.error);
+  const stoppingRef = useRef(false);
+
+  const stopScanner = useCallback(async () => {
+    if (stoppingRef.current) return;
+    const scanner = qrCodeRef.current;
+    if (scanner?.isScanning) {
+      stoppingRef.current = true;
+      try {
+        await scanner.stop();
+      } catch {
+        // Ignore "already under transition" errors
+      } finally {
+        stoppingRef.current = false;
+      }
     }
-  }, [scanMode]);
+  }, []);
 
   const getUserList = useCallback(async () => {
     const { collection, getDocs } = await import("firebase/firestore");
@@ -164,9 +174,10 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 250 } },
       (decodedText) => {
-        qrCode.stop().catch(console.error);
-        setScanResult(decodedText);
-        processReceiptUrl(decodedText);
+        stopScanner().then(() => {
+          setScanResult(decodedText);
+          processReceiptUrl(decodedText);
+        });
       },
       () => { /* ignore frequent no-QR-found errors */ }
     ).catch((err) => {
@@ -175,11 +186,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     });
 
     return () => {
-      if (qrCodeRef.current?.isScanning) {
-        qrCodeRef.current.stop().catch(console.error);
-      }
+      stopScanner();
     };
-  }, [user, scanMode, scanResult, processing, showModal, processReceiptUrl]);
+  }, [user, scanMode, scanResult, processing, showModal, processReceiptUrl, stopScanner]);
 
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
