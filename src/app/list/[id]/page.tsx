@@ -30,6 +30,8 @@ import {
   Undo2,
   UserMinus,
   Sparkles,
+  DollarSign,
+  Plus,
 } from "lucide-react";
 import { listService, List, MemberInfo } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
@@ -138,6 +140,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [modalCategory, setModalCategory] = useState<string>("");
   const [modalFieldsDirty, setModalFieldsDirty] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
+
+  // Manual price entry
+  const [showManualPrice, setShowManualPrice] = useState(false);
+  const [manualPrice, setManualPrice] = useState("");
+  const [manualPriceSaving, setManualPriceSaving] = useState(false);
 
   // Add item form
   const [newItemName, setNewItemName] = useState("");
@@ -358,6 +365,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setModalUnit(item.unit ?? "");
     setModalCategory(item.category ?? "");
     setModalFieldsDirty(false);
+    setShowManualPrice(false);
+    setManualPrice("");
     setIsModalOpen(true);
   };
 
@@ -417,6 +426,45 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }, 600);
     return () => { if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current); };
   }, [modalQty, modalUnit, modalCategory, modalFieldsDirty, selectedItem, saveModalFields]);
+
+  // ── Manual price entry ─────────────────────────────────────────────────
+  const saveManualPrice = async () => {
+    if (!selectedItem || !manualPrice || isNaN(Number(manualPrice)) || Number(manualPrice) <= 0) return;
+    setManualPriceSaving(true);
+    try {
+      const price = Math.round(Number(manualPrice) * 100) / 100;
+      const now = new Date();
+      const dateLabel = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+        .replace(".", "")
+        .replace(/\b\w/g, c => c.toUpperCase());
+
+      const itemRef = doc(db, "lists", listId, "items", selectedItem.id);
+      const existingHistory: { date: string; price: number }[] = selectedItem.priceHistory ?? [];
+      const updatedHistory = [...existingHistory, { date: dateLabel, price }];
+      const averagePrice = Math.round((updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length) * 100) / 100;
+
+      await updateDoc(itemRef, {
+        averagePrice,
+        priceHistory: updatedHistory,
+      });
+
+      await addDoc(collection(db, "price_history"), {
+        item_id: selectedItem.id,
+        sefaz_description: "Entrada manual",
+        price,
+        date: serverTimestamp(),
+        list_id: listId,
+      });
+
+      setSelectedItem({ ...selectedItem, averagePrice, priceHistory: updatedHistory });
+      setManualPrice("");
+      setShowManualPrice(false);
+    } catch (err) {
+      console.error("Error saving manual price:", err);
+    } finally {
+      setManualPriceSaving(false);
+    }
+  };
 
   // ── Copy share code ─────────────────────────────────────────────────────────
   const copyCode = async () => {
@@ -1003,6 +1051,54 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                 Nenhum dado de preço ainda.
               </div>
             )}
+
+            {/* Manual price entry */}
+            <div className="space-y-2">
+              {showManualPrice ? (
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3 space-y-2">
+                  <p className="text-[10px] font-bold text-primary/60 uppercase tracking-wider">Adicionar preço manualmente</p>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm font-bold text-muted-foreground">R$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={manualPrice}
+                      onChange={(e) => setManualPrice(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveManualPrice(); }}
+                      placeholder="0,00"
+                      className="h-9 flex-1 px-3 text-sm rounded-lg border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      className="h-9 rounded-lg font-bold"
+                      onClick={saveManualPrice}
+                      disabled={manualPriceSaving || !manualPrice || Number(manualPrice) <= 0}
+                    >
+                      {manualPriceSaving ? "..." : "Salvar"}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => { setShowManualPrice(false); setManualPrice(""); }}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Data de registro: hoje ({new Date().toLocaleDateString("pt-BR")})</p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowManualPrice(true)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border-2 border-dashed border-primary/30 text-primary/70 hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-colors text-sm font-bold"
+                >
+                  <Plus className="w-4 h-4" />
+                  Adicionar preço manualmente
+                </button>
+              )}
+            </div>
 
             {/* Price history */}
             {selectedItem?.priceHistory && selectedItem.priceHistory.length > 0 && (
