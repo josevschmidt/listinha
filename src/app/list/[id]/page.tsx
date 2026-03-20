@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -194,6 +194,33 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [user, listId, router]);
 
+  // ── AI auto-categorize existing uncategorized items ─────────────────────────
+  const categorizingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!listId || !items.length) return;
+    const uncategorized = items.filter((i) => !i.category && !categorizingRef.current.has(i.id));
+    if (!uncategorized.length) return;
+
+    uncategorized.forEach((item) => {
+      categorizingRef.current.add(item.id);
+      fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: item.name }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.category) {
+            updateDoc(doc(db, "lists", listId, "items", item.id), { category: data.category }).catch(console.error);
+          }
+        })
+        .catch(() => {
+          // silently ignore — will retry on next load
+          categorizingRef.current.delete(item.id);
+        });
+    });
+  }, [items, listId]);
+
   // ── AI auto-categorize (debounced) ─────────────────────────────────────────
   useEffect(() => {
     if (!newItemName.trim() || addCategory) {
@@ -229,6 +256,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     .filter((item) => !search || item.name.toLowerCase().includes(search.toLowerCase()))
     .filter((item) => !categoryFilter || item.category === categoryFilter)
     .sort((a, b) => {
+      // Always show pending items on top, bought items on bottom
+      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
       if (sortBy === "az") return a.name.localeCompare(b.name, "pt-BR");
       if (sortBy === "category") return (a.category ?? "").localeCompare(b.category ?? "", "pt-BR");
       if (sortBy === "price") return (b.averagePrice ?? 0) - (a.averagePrice ?? 0);
@@ -333,6 +362,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   };
 
   const closeModal = () => {
+    // Flush pending auto-save immediately
+    if (modalFieldsDirty && selectedItem) {
+      if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current);
+      saveModalFields(selectedItem.id, modalQty, modalUnit, modalCategory);
+    }
     setIsModalOpen(false);
     setSelectedItem(null);
     setIsEditingItemName(false);
@@ -356,22 +390,33 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
-  const saveModalFields = async () => {
-    if (!selectedItem) return;
-    setModalSaving(true);
+  const saveModalFields = useCallback(async (itemId: string, qty: string, unit: string, category: string) => {
     try {
-      await updateDoc(doc(db, "lists", listId, "items", selectedItem.id), {
-        quantity: modalQty && !isNaN(Number(modalQty)) ? Number(modalQty) : null,
-        unit: modalUnit || null,
-        category: modalCategory || null,
+      await updateDoc(doc(db, "lists", listId, "items", itemId), {
+        quantity: qty && !isNaN(Number(qty)) ? Number(qty) : null,
+        unit: unit || null,
+        category: category || null,
       });
-      setModalFieldsDirty(false);
     } catch (err) {
       console.error("Error saving modal fields:", err);
-    } finally {
-      setModalSaving(false);
     }
-  };
+  }, [listId]);
+
+  // Auto-save modal fields with debounce
+  const modalSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!modalFieldsDirty || !selectedItem) return;
+    if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current);
+    const itemId = selectedItem.id;
+    modalSaveTimerRef.current = setTimeout(() => {
+      setModalSaving(true);
+      saveModalFields(itemId, modalQty, modalUnit, modalCategory).finally(() => {
+        setModalSaving(false);
+        setModalFieldsDirty(false);
+      });
+    }, 600);
+    return () => { if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current); };
+  }, [modalQty, modalUnit, modalCategory, modalFieldsDirty, selectedItem, saveModalFields]);
 
   // ── Copy share code ─────────────────────────────────────────────────────────
   const copyCode = async () => {
@@ -930,10 +975,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   </button>
                 ))}
               </div>
-              {modalFieldsDirty && (
-                <Button size="sm" className="h-8 text-xs" onClick={saveModalFields} disabled={modalSaving}>
-                  {modalSaving ? "Salvando..." : "Salvar alterações"}
-                </Button>
+              {(modalFieldsDirty || modalSaving) && (
+                <span className="text-[11px] text-muted-foreground italic">
+                  {modalSaving ? "Salvando..." : "Salvo automaticamente"}
+                </span>
               )}
             </div>
 
