@@ -5,10 +5,20 @@ service cloud.firestore {
       // Allow any authenticated user to create a new list
       allow create: if request.auth != null;
 
-      // Allow reading and modifying lists only for owners or members
-      allow read, update, delete: if request.auth != null && (
+      // Allow querying lists for any authenticated user (needed to join via share code)
+      allow list: if request.auth != null;
+
+      // Allow reading a specific list only for owners or members
+      allow get, delete: if request.auth != null && (
         request.auth.uid in resource.data.get('member_ids', []) ||
         resource.data.owner_id == request.auth.uid
+      );
+
+      // Allow update for members/owner, or if the user is joining (adding themselves to member_ids)
+      allow update: if request.auth != null && (
+        request.auth.uid in resource.data.get('member_ids', []) ||
+        resource.data.owner_id == request.auth.uid ||
+        request.auth.uid in request.resource.data.get('member_ids', [])
       );
 
       // Items and shared access subcollections

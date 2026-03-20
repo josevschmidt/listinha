@@ -53,7 +53,7 @@ export function JoinListDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); setError(""); }}>
-      <DialogTrigger>
+      <DialogTrigger asChild>
         <Button variant="outline" className="w-full sm:w-auto h-11 px-6">
           <LogIn className="w-5 h-5 mr-2" />
           Entrar com Código
@@ -73,7 +73,7 @@ export function JoinListDialog() {
               <Input
                 id="code"
                 value={code}
-                onChange={(e) => { setCode(e.target.value); setError(""); }}
+                onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(""); }}
                 placeholder="Ex: LST-AB12CD"
                 className="font-mono"
                 autoFocus
