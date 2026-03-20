@@ -9,13 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 export interface AIValidationData {
@@ -45,8 +38,6 @@ interface ValidationModalProps {
 export function ValidationModal({ open, onOpenChange, data, onConfirm }: ValidationModalProps) {
   // State for tracking which AI matches the user kept checked
   const [approvedMatches, setApprovedMatches] = useState<Set<string>>(new Set());
-  // State for manual matches: Record<user_item_id, sefaz_name (as stringified json string with price)>
-  const [manualMatches, setManualMatches] = useState<Record<string, string>>({});
   // Track previous data to reset state when new data arrives
   const [prevData, setPrevData] = useState(data);
 
@@ -54,7 +45,6 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
     setPrevData(data);
     if (data?.matched) {
       setApprovedMatches(new Set(data.matched.map(m => m.user_item_id)));
-      setManualMatches({});
     }
   }
 
@@ -73,7 +63,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
   const handleSave = () => {
     const finalMatches = [];
 
-    // 1. Add approved AI Matches
+    // Add approved AI Matches
     for (const match of data.matched) {
       if (approvedMatches.has(match.user_item_id)) {
         finalMatches.push({
@@ -81,23 +71,6 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
           sefaz_name: match.sefaz_name,
           price: match.price
         });
-      }
-    }
-
-    // 2. Add manual matches
-    for (const userItemId of Object.keys(manualMatches)) {
-      const sefazString = manualMatches[userItemId];
-      if (sefazString && sefazString !== "none") {
-        try {
-          const parsed = JSON.parse(sefazString);
-          finalMatches.push({
-            user_item_id: userItemId,
-            sefaz_name: parsed.sefaz_name,
-            price: parsed.price
-          });
-        } catch {
-          console.error("Failed to parse manual match data for item:", userItemId);
-        }
       }
     }
 
@@ -152,47 +125,27 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
             </div>
           )}
 
-          {/* Unmatched Items (Manual Mapping) */}
-          {data.unmatched_user && data.unmatched_user.length > 0 && (
-             <div className="space-y-3">
-             <h3 className="font-semibold flex items-center text-amber-600 dark:text-amber-500">
-               <AlertCircle className="w-5 h-5 mr-2" />
-               Itens Pendentes
-             </h3>
-             <p className="text-sm text-zinc-500">
-               Estes itens da sua lista não foram encontrados na nota. Selecione manualmente se desejar:
-             </p>
-             
-             <div className="space-y-3">
-               {data.unmatched_user.map((unmatchedUser) => (
-                 <div key={unmatchedUser.user_item_id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 border rounded-lg dark:border-zinc-800 bg-white dark:bg-zinc-950">
-                   <span className="font-medium min-w-[140px] truncate">{unmatchedUser.user_item_name}</span>
-                   <div className="flex-1">
-                     <Select 
-                       value={manualMatches[unmatchedUser.user_item_id] || "none"}
-                       onValueChange={(val) => setManualMatches(prev => ({ ...prev, [unmatchedUser.user_item_id]: val || "none" }))}
-                     >
-                       <SelectTrigger className="w-full">
-                         <SelectValue placeholder="Selecione na nota..." />
-                       </SelectTrigger>
-                       <SelectContent>
-                         <SelectItem value="none" className="text-zinc-500 italic">Não comprei / Ignorar</SelectItem>
-                         {data.unmatched_sefaz?.map((sefazItem, idx) => (
-                           <SelectItem 
-                             key={`sefaz-${idx}`} 
-                             value={JSON.stringify({ sefaz_name: sefazItem.sefaz_name, price: sefazItem.price })}
-                           >
-                             <span className="truncate max-w-[200px] inline-block align-bottom">{sefazItem.sefaz_name}</span> - 
-                             <span className="font-medium ml-1">R$ {sefazItem.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                           </SelectItem>
-                         ))}
-                       </SelectContent>
-                     </Select>
-                   </div>
-                 </div>
-               ))}
-             </div>
-           </div>
+          {/* Unmatched receipt items (not matched to any list item) */}
+          {data.unmatched_sefaz && data.unmatched_sefaz.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold flex items-center text-amber-600 dark:text-amber-500">
+                <AlertCircle className="w-5 h-5 mr-2" />
+                Outros Itens da Nota
+              </h3>
+              <p className="text-sm text-zinc-500">
+                Estes itens estão na nota fiscal mas não foram associados a nenhum item da sua lista:
+              </p>
+              <div className="border rounded-lg divide-y dark:border-zinc-800 dark:divide-zinc-800">
+                {data.unmatched_sefaz.map((item, idx) => (
+                  <div key={`sefaz-extra-${idx}`} className="p-3 flex items-center justify-between bg-white dark:bg-zinc-950">
+                    <span className="text-sm font-medium truncate flex-1">{item.sefaz_name}</span>
+                    <span className="text-sm font-medium shrink-0 text-zinc-900 dark:text-zinc-100 ml-4">
+                      R$ {item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 

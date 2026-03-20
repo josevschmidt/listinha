@@ -293,11 +293,56 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setIsEditingListName(false);
   };
 
+  // ── Autocomplete suggestions for bought items ─────────────────────────────
+  const boughtSuggestions = newItemName.trim().length >= 2
+    ? items.filter(
+        (item) =>
+          item.status === "bought" &&
+          item.name.toLowerCase().includes(newItemName.trim().toLowerCase())
+      )
+    : [];
+
+  const handleSelectSuggestion = async (item: Item) => {
+    setNewItemName("");
+    setAddQty("");
+    setAddUnit("");
+    setAddCategory("");
+    setAiSuggestedCategory("");
+    setShowAddExtras(false);
+    try {
+      await updateDoc(doc(db, "lists", listId, "items", item.id), { status: "pending" });
+    } catch (err) {
+      console.error("Error unmarking item:", err);
+    }
+  };
+
   // ── Add item ────────────────────────────────────────────────────────────────
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim() || !user) return;
     const name = newItemName.trim();
+
+    // Check if item already exists (case insensitive)
+    const existingItem = items.find(
+      (item) => item.name.toLowerCase() === name.toLowerCase()
+    );
+
+    if (existingItem && existingItem.status === "bought") {
+      // Unmark the existing item instead of creating a duplicate
+      setNewItemName("");
+      setAddQty("");
+      setAddUnit("");
+      setAddCategory("");
+      setAiSuggestedCategory("");
+      setShowAddExtras(false);
+      try {
+        await updateDoc(doc(db, "lists", listId, "items", existingItem.id), { status: "pending" });
+      } catch (err) {
+        console.error("Error unmarking item:", err);
+      }
+      return;
+    }
+
     const categoryToSave = addCategory || aiSuggestedCategory;
     setNewItemName("");
     setAddQty("");
@@ -887,6 +932,25 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                     }`}
                   >
                     {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bought item suggestions */}
+          {boughtSuggestions.length > 0 && (
+            <div className="glass border rounded-2xl px-3 py-2 shadow-md space-y-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Já na lista (comprado)</span>
+              <div className="flex flex-wrap gap-1.5">
+                {boughtSuggestions.slice(0, 5).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectSuggestion(item)}
+                    className="px-3 py-1.5 text-sm font-semibold rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+                  >
+                    {item.name}
                   </button>
                 ))}
               </div>
