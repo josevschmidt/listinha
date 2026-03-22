@@ -7,7 +7,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { ArrowLeft, Loader2, QrCode, ImageIcon, Link2, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ValidationModal, AIValidationData } from "@/app/components/dashboard/ValidationModal";
+import { ValidationModal, AIValidationData, NewItemSuggestion } from "@/app/components/dashboard/ValidationModal";
 
 type ScanMode = "qr" | "photo" | "url";
 
@@ -26,6 +26,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const [validationData, setValidationData] = useState<AIValidationData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [emissionDate, setEmissionDate] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState<string | null>(null);
 
   // URL mode
   const [urlInput, setUrlInput] = useState("");
@@ -108,6 +109,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       if (sefazData.emission_date) {
         setEmissionDate(sefazData.emission_date);
       }
+      if (sefazData.store_name && sefazData.store_name !== "Desconhecido") {
+        setStoreName(sefazData.store_name);
+      }
 
       const matchData = await runAIMatch(sefazData.items, userList);
 
@@ -148,6 +152,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
 
       if (ocrData.emission_date) {
         setEmissionDate(ocrData.emission_date);
+      }
+      if (ocrData.store_name && ocrData.store_name !== "Desconhecido") {
+        setStoreName(ocrData.store_name);
       }
 
       const matchData = await runAIMatch(ocrData.items, userList);
@@ -213,7 +220,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     e.target.value = "";
   };
 
-  const handleSaveMatches = async (finalMatches: Array<{ user_item_id: string; sefaz_name: string; price: number }>) => {
+  const handleSaveMatches = async (finalMatches: Array<{ user_item_id: string; sefaz_name: string; price: number }>, newItems?: NewItemSuggestion[]) => {
     try {
       setProcessing(true);
       setShowModal(false);
@@ -240,8 +247,10 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
         const itemSnap = await getDoc(itemRef);
         const existingData = itemSnap.exists() ? itemSnap.data() : {};
 
-        const existingHistory: { date: string; price: number }[] = existingData.priceHistory ?? [];
-        const updatedHistory = [...existingHistory, { date: dateLabel, price: match.price }];
+        const existingHistory: { date: string; price: number; location?: string }[] = existingData.priceHistory ?? [];
+        const newEntry: { date: string; price: number; location?: string } = { date: dateLabel, price: match.price };
+        if (storeName) newEntry.location = storeName;
+        const updatedHistory = [...existingHistory, newEntry];
         const averagePrice = updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length;
 
         await updateDoc(itemRef, {
@@ -254,9 +263,35 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           item_id: match.user_item_id,
           sefaz_description: match.sefaz_name,
           price: match.price,
+          location: storeName || null,
           date: emissionDate ? Timestamp.fromDate(dateForLabel) : serverTimestamp(),
           list_id: listId
         });
+      }
+
+      // Add new suggested items to the list
+      if (newItems && newItems.length > 0) {
+        for (const newItem of newItems) {
+          const historyEntry: { date: string; price: number; location?: string } = { date: dateLabel, price: newItem.price };
+          if (storeName) historyEntry.location = storeName;
+
+          const newItemRef = await addDoc(collection(db, "lists", listId, "items"), {
+            name: newItem.suggested_name,
+            status: "bought",
+            averagePrice: newItem.price,
+            priceHistory: [historyEntry],
+            created_at: serverTimestamp(),
+          });
+
+          await addDoc(collection(db, "price_history"), {
+            item_id: newItemRef.id,
+            sefaz_description: newItem.sefaz_name,
+            price: newItem.price,
+            location: storeName || null,
+            date: emissionDate ? Timestamp.fromDate(dateForLabel) : serverTimestamp(),
+            list_id: listId,
+          });
+        }
       }
 
       router.push(`/list/${listId}`);

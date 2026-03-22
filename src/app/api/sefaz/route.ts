@@ -26,7 +26,13 @@ function tryParseTabResult($: cheerio.CheerioAPI): ParsedItem[] {
     if (cells.length >= 3) {
       // Multi-column layout: [seq, description, qty, unit, unit_price, total]
       name = $(cells[1]).text().trim();
-      price = parsePrice($(cells[cells.length - 1]).text().trim());
+      // Prefer unit price (second-to-last column) over total (last column)
+      if (cells.length >= 4) {
+        price = parsePrice($(cells[cells.length - 2]).text().trim());
+        if (!price) price = parsePrice($(cells[cells.length - 1]).text().trim());
+      } else {
+        price = parsePrice($(cells[cells.length - 1]).text().trim());
+      }
     } else {
       // 2-column layout (RS/SVRS): name in .txtTit span, price in .valor span
       name = $(cells.first()).find(".txtTit").first().text().trim();

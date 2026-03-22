@@ -22,23 +22,25 @@ export async function POST(request: Request) {
     
     // Use the Flash model configured to return JSON
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       generationConfig: { 
         responseMimeType: "application/json" 
       }
     });
 
     const prompt = `
-    Você é um assistente de compras inteligente. 
+    Você é um assistente de compras inteligente.
     Sua tarefa é cruzar os itens de uma lista de compras genérica feita pelo usuário com os itens reais extraídos do comprovante de uma nota fiscal (SEFAZ).
-    
+
     Lista do usuário (itens pendentes): ${JSON.stringify(userList)}
     Itens da Nota Fiscal: ${JSON.stringify(sefazList)}
 
     Regras:
     1. Tente realizar o "fuzzy matching". Por exemplo, se o usuário anotou "Leite" e na nota veio "LEITE INT BATAVO 1L", isso é um match.
     2. Considere erros de digitação e abreviações da nota fiscal.
-    3. Retorne APENAS um objeto JSON válido seguindo ESTRITAMENTE a seguinte estrutura:
+    3. O preço retornado deve ser sempre o PREÇO UNITÁRIO (por kg, por unidade, por litro, etc). Se o preço fornecido já for unitário, use-o diretamente. Se parecer ser um total (ex: quantidade × preço), divida pela quantidade para obter o unitário.
+    4. Para cada item da nota que NÃO corresponde a nenhum item da lista (unmatched_sefaz), sugira um nome curto e amigável em português para adicionar à lista de compras. Por exemplo: "BARRA CHOCOLATE 90G LACTA BRANCO FEST" → "Barra de chocolate", "LEITE INT BATAVO 1L" → "Leite integral", "DET LIQ YPEZINHO 500ML" → "Detergente líquido".
+    5. Retorne APENAS um objeto JSON válido seguindo ESTRITAMENTE a seguinte estrutura:
        {
          "matched": [
            {
@@ -51,7 +53,8 @@ export async function POST(request: Request) {
          "unmatched_sefaz": [
            {
              "sefaz_name": "Nome do item da nota que sobrou (não bateu com nada da lista)",
-             "price": 5.00
+             "price": 5.00,
+             "suggested_name": "Nome curto e amigável sugerido para adicionar à lista"
            }
          ],
          "unmatched_user": [

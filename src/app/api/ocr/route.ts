@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       generationConfig: {
         responseMimeType: "application/json",
       },
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     const prompt = `
     Você é um assistente especializado em ler notas fiscais brasileiras (NFC-e / cupom fiscal).
-    Analise a imagem da nota fiscal e extraia TODOS os itens de produto com seus respectivos preços totais (valor total do item, não unitário).
+    Analise a imagem da nota fiscal e extraia TODOS os itens de produto com seus respectivos PREÇOS UNITÁRIOS (preço por unidade, kg, litro, etc).
 
     Também extraia:
     - O nome do estabelecimento (store_name)
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     Regras:
-    1. O preço deve ser o VALOR TOTAL de cada item (quantidade × preço unitário), não o preço unitário
+    1. O preço deve ser o PREÇO UNITÁRIO de cada item (preço por kg, por unidade, por litro, etc), NÃO o valor total. Se o item mostra quantidade e valor total, divida o total pela quantidade para obter o preço unitário.
     2. Ignore linhas de subtotal, total, desconto, troco, forma de pagamento
     3. Se não conseguir ler algum campo, use null para emission_date ou "Desconhecido" para store_name
     4. Os preços devem ser números decimais (ex: 10.50, não "10,50")

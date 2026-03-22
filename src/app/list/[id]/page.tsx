@@ -30,8 +30,9 @@ import {
   Undo2,
   UserMinus,
   Sparkles,
-  DollarSign,
   Plus,
+  AlertTriangle,
+  GripVertical,
 } from "lucide-react";
 import { listService, List, MemberInfo } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
@@ -87,6 +88,12 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface PriceEntry {
+  date: string;
+  price: number;
+  location?: string;
+}
+
 interface Item {
   id: string;
   name: string;
@@ -95,7 +102,7 @@ interface Item {
   unit?: string;
   category?: string;
   averagePrice?: number;
-  priceHistory?: { date: string; price: number }[];
+  priceHistory?: PriceEntry[];
 }
 
 type SortKey = "default" | "az" | "category" | "price";
@@ -124,7 +131,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
   // Item filtering / sorting
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortKey>("default");
+  const [sortBy, setSortBy] = useState<SortKey>("category");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -144,7 +151,13 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   // Manual price entry
   const [showManualPrice, setShowManualPrice] = useState(false);
   const [manualPrice, setManualPrice] = useState("");
+  const [manualPriceLocation, setManualPriceLocation] = useState("");
   const [manualPriceSaving, setManualPriceSaving] = useState(false);
+
+  // Price history editing
+  const [editingHistoryIdx, setEditingHistoryIdx] = useState<number | null>(null);
+  const [editHistoryPrice, setEditHistoryPrice] = useState("");
+  const [editHistoryLocation, setEditHistoryLocation] = useState("");
 
   // Add item form
   const [newItemName, setNewItemName] = useState("");
@@ -155,12 +168,27 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [aiSuggestedCategory, setAiSuggestedCategory] = useState("");
   const [isCategorizing, setIsCategorizing] = useState(false);
 
+  // Category order (drag & drop)
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(`listinha-cat-order-${listId}`);
+      if (saved) {
+        try { return JSON.parse(saved); } catch { /* ignore */ }
+      }
+    }
+    return [...CATEGORIES];
+  });
+  const [showCategoryOrder, setShowCategoryOrder] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
   // Undo
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const undoRef = useRef<UndoState | null>(null);
 
-  // Copy code
+  // Copy code / share code popover
   const [codeCopied, setCodeCopied] = useState(false);
+  const [showShareCode, setShowShareCode] = useState(false);
 
   // Menu / dialogs
   const [showMenu, setShowMenu] = useState(false);
@@ -266,7 +294,17 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       // Always show pending items on top, bought items on bottom
       if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
       if (sortBy === "az") return a.name.localeCompare(b.name, "pt-BR");
-      if (sortBy === "category") return (a.category ?? "").localeCompare(b.category ?? "", "pt-BR");
+      if (sortBy === "category") {
+        // Sort by category order, then alphabetically within each category
+        const catA = a.category ?? "Outros";
+        const catB = b.category ?? "Outros";
+        const orderA = categoryOrder.indexOf(catA);
+        const orderB = categoryOrder.indexOf(catB);
+        const idxA = orderA >= 0 ? orderA : categoryOrder.length;
+        const idxB = orderB >= 0 ? orderB : categoryOrder.length;
+        if (idxA !== idxB) return idxA - idxB;
+        return a.name.localeCompare(b.name, "pt-BR");
+      }
       if (sortBy === "price") return (b.averagePrice ?? 0) - (a.averagePrice ?? 0);
       return 0; // default: insertion order from Firestore
     });
@@ -292,6 +330,13 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setListNameSaving(false);
     setIsEditingListName(false);
   };
+
+  // ── Duplicate detection ──────────────────────────────────────────────────────
+  const duplicateItem = newItemName.trim().length >= 1
+    ? items.find(
+        (item) => item.name.toLowerCase() === newItemName.trim().toLowerCase()
+      )
+    : null;
 
   // ── Autocomplete suggestions for bought items ─────────────────────────────
   const boughtSuggestions = newItemName.trim().length >= 2
@@ -412,6 +457,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setModalFieldsDirty(false);
     setShowManualPrice(false);
     setManualPrice("");
+    setManualPriceLocation("");
+    setEditingHistoryIdx(null);
     setIsModalOpen(true);
   };
 
@@ -484,8 +531,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         .replace(/\b\w/g, c => c.toUpperCase());
 
       const itemRef = doc(db, "lists", listId, "items", selectedItem.id);
-      const existingHistory: { date: string; price: number }[] = selectedItem.priceHistory ?? [];
-      const updatedHistory = [...existingHistory, { date: dateLabel, price }];
+      const existingHistory: PriceEntry[] = selectedItem.priceHistory ?? [];
+      const newEntry: PriceEntry = { date: dateLabel, price, ...(manualPriceLocation.trim() && { location: manualPriceLocation.trim() }) };
+      const updatedHistory = [...existingHistory, newEntry];
       const averagePrice = Math.round((updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length) * 100) / 100;
 
       await updateDoc(itemRef, {
@@ -497,18 +545,106 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         item_id: selectedItem.id,
         sefaz_description: "Entrada manual",
         price,
+        location: manualPriceLocation.trim() || null,
         date: serverTimestamp(),
         list_id: listId,
       });
 
       setSelectedItem({ ...selectedItem, averagePrice, priceHistory: updatedHistory });
       setManualPrice("");
+      setManualPriceLocation("");
       setShowManualPrice(false);
     } catch (err) {
       console.error("Error saving manual price:", err);
     } finally {
       setManualPriceSaving(false);
     }
+  };
+
+  const saveHistoryEdit = async (idx: number) => {
+    if (!selectedItem || !selectedItem.priceHistory) return;
+    const newPrice = Number(editHistoryPrice);
+    if (isNaN(newPrice) || newPrice <= 0) return;
+
+    const updatedHistory = [...selectedItem.priceHistory];
+    updatedHistory[idx] = {
+      ...updatedHistory[idx],
+      price: Math.round(newPrice * 100) / 100,
+      ...(editHistoryLocation.trim() ? { location: editHistoryLocation.trim() } : {}),
+    };
+    if (!editHistoryLocation.trim() && updatedHistory[idx].location) {
+      delete updatedHistory[idx].location;
+    }
+    if (editHistoryLocation.trim()) {
+      updatedHistory[idx].location = editHistoryLocation.trim();
+    }
+
+    const averagePrice = Math.round((updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length) * 100) / 100;
+
+    try {
+      await updateDoc(doc(db, "lists", listId, "items", selectedItem.id), {
+        averagePrice,
+        priceHistory: updatedHistory,
+      });
+      setSelectedItem({ ...selectedItem, averagePrice, priceHistory: updatedHistory });
+      setEditingHistoryIdx(null);
+    } catch (err) {
+      console.error("Error updating price history:", err);
+    }
+  };
+
+  // ── Category reorder handlers ────────────────────────────────────────────────
+  const handleDragStart = (idx: number) => {
+    setDragIdx(idx);
+  };
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    setDragOverIdx(idx);
+  };
+  const handleDrop = (idx: number) => {
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
+    const newOrder = [...categoryOrder];
+    const [moved] = newOrder.splice(dragIdx, 1);
+    newOrder.splice(idx, 0, moved);
+    setCategoryOrder(newOrder);
+    localStorage.setItem(`listinha-cat-order-${listId}`, JSON.stringify(newOrder));
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+
+  // Touch-based drag and drop for mobile
+  const touchStartRef = useRef<{ idx: number; y: number } | null>(null);
+  const handleTouchStart = (idx: number, e: React.TouchEvent) => {
+    touchStartRef.current = { idx, y: e.touches[0].clientY };
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const elements = document.querySelectorAll("[data-cat-drag-idx]");
+    for (const el of elements) {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        const idx = parseInt((el as HTMLElement).dataset.catDragIdx ?? "-1");
+        if (idx >= 0) setDragOverIdx(idx);
+        break;
+      }
+    }
+  };
+  const handleTouchEnd = () => {
+    if (touchStartRef.current !== null && dragOverIdx !== null) {
+      handleDrop(dragOverIdx);
+    }
+    touchStartRef.current = null;
+    setDragIdx(null);
+    setDragOverIdx(null);
   };
 
   // ── Copy share code ─────────────────────────────────────────────────────────
@@ -645,14 +781,41 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               </Button>
             </div>
           ) : (
-            <button
-              className="flex items-center gap-1.5 flex-1 overflow-hidden text-left group"
-              onClick={startEditingListName}
-              title="Clique para renomear"
-            >
-              <span className="font-bold text-xl tracking-tight text-foreground truncate">{list?.name}</span>
-              <Pencil className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
-            </button>
+            <>
+              <button
+                className="flex items-center gap-1.5 flex-1 overflow-hidden text-left group"
+                onClick={startEditingListName}
+                title="Clique para renomear"
+              >
+                <span className="font-bold text-xl tracking-tight text-foreground truncate">{list?.name}</span>
+                <Pencil className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
+              </button>
+              {/* Share code info icon */}
+              <div className="relative shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground"
+                  onClick={() => setShowShareCode(!showShareCode)}
+                >
+                  <Info className="w-4 h-4" />
+                </Button>
+                {showShareCode && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowShareCode(false)} />
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-40 bg-card border border-border rounded-xl shadow-lg p-3 min-w-[220px]">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Código de compartilhamento</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-sm text-foreground bg-muted px-2 py-1 rounded-lg">{list?.share_code}</span>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/20 shrink-0" onClick={copyCode}>
+                          {codeCopied ? <CopyCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
           )}
 
           {/* Action buttons */}
@@ -693,16 +856,6 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       </header>
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 py-4 flex flex-col gap-3">
-
-        {/* ── Share code ── */}
-        <div className="bg-primary/10 text-primary px-4 py-3 rounded-2xl text-sm flex items-center justify-between border border-primary/20">
-          <span className="font-medium">
-            Código: <strong className="font-mono bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-lg ml-1">{list?.share_code}</strong>
-          </span>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/20" onClick={copyCode}>
-            {codeCopied ? <CopyCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          </Button>
-        </div>
 
         {/* ── Search & sort bar ── */}
         <div className="flex gap-2 items-center">
@@ -782,6 +935,44 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                 </div>
               </div>
             )}
+
+            {/* Category reorder */}
+            <div>
+              <button
+                onClick={() => setShowCategoryOrder(!showCategoryOrder)}
+                className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1 hover:opacity-80"
+              >
+                <GripVertical className="w-3 h-3" />
+                {showCategoryOrder ? "Ocultar ordem" : "Reordenar categorias"}
+              </button>
+              {showCategoryOrder && (
+                <div className="space-y-1">
+                  {categoryOrder.map((cat, idx) => (
+                    <div
+                      key={cat}
+                      data-cat-drag-idx={idx}
+                      draggable
+                      onDragStart={() => handleDragStart(idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={() => handleDrop(idx)}
+                      onDragEnd={handleDragEnd}
+                      onTouchStart={(e) => handleTouchStart(idx, e)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-grab active:cursor-grabbing select-none ${
+                        dragOverIdx === idx ? "border-primary bg-primary/10" : "border-border bg-background"
+                      } ${dragIdx === idx ? "opacity-50" : ""}`}
+                    >
+                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] ${CATEGORY_COLORS[cat] || "bg-muted text-muted-foreground"}`}>
+                        {cat}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground mt-1">Arraste para reordenar</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -811,7 +1002,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
-              <p className="text-sm font-medium">Nenhum item encontrado para "<strong>{search || categoryFilter}</strong>".</p>
+              <p className="text-sm font-medium">Nenhum item encontrado para &ldquo;<strong>{search || categoryFilter}</strong>&rdquo;.</p>
             </div>
           ) : (
             visibleItems.map((item) => (
@@ -881,7 +1072,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         <div className="fixed bottom-[7.5rem] left-0 right-0 flex justify-center z-30 pointer-events-none px-4">
           <div className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl pointer-events-auto max-w-sm w-full">
             <Trash2 className="w-4 h-4 shrink-0 opacity-60" />
-            <span className="text-sm font-medium flex-1 truncate">"{undoState.item.name}" excluído</span>
+            <span className="text-sm font-medium flex-1 truncate">&ldquo;{undoState.item.name}&rdquo; excluído</span>
             <button className="text-sm font-bold text-primary dark:text-primary shrink-0 flex items-center gap-1" onClick={handleUndo}>
               <Undo2 className="w-3.5 h-3.5" /> Desfazer
             </button>
@@ -935,6 +1126,16 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Duplicate item warning */}
+          {duplicateItem && (
+            <div className="glass border border-amber-300 dark:border-amber-700 rounded-2xl px-3 py-2 shadow-md flex items-center gap-2 bg-amber-50/80 dark:bg-amber-950/30">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                &ldquo;{duplicateItem.name}&rdquo; já existe na lista ({duplicateItem.status === "pending" ? "pendente" : "comprado"})
+              </span>
             </div>
           )}
 
@@ -1030,10 +1231,13 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               </div>
             ) : (
               <div className="flex items-start justify-between gap-2">
-                <DialogTitle className="text-2xl font-bold truncate">{selectedItem?.name}</DialogTitle>
-                <Button size="icon" variant="ghost" className="shrink-0 text-primary-foreground hover:bg-white/20 h-8 w-8 mt-0.5" onClick={() => { setItemNameDraft(selectedItem?.name ?? ""); setIsEditingItemName(true); }}>
-                  <Pencil className="w-4 h-4" />
-                </Button>
+                <DialogTitle
+                  className="text-2xl font-bold truncate cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => { setItemNameDraft(selectedItem?.name ?? ""); setIsEditingItemName(true); }}
+                  title="Clique para editar"
+                >
+                  {selectedItem?.name}
+                </DialogTitle>
               </div>
             )}
             <DialogDescription className="text-primary-foreground/80 font-medium">
@@ -1146,11 +1350,18 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                       size="icon"
                       variant="ghost"
                       className="h-9 w-9 shrink-0"
-                      onClick={() => { setShowManualPrice(false); setManualPrice(""); }}
+                      onClick={() => { setShowManualPrice(false); setManualPrice(""); setManualPriceLocation(""); }}
                     >
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
+                  <input
+                    type="text"
+                    value={manualPriceLocation}
+                    onChange={(e) => setManualPriceLocation(e.target.value)}
+                    placeholder="Local (ex: Supermercado X)"
+                    className="h-8 w-full px-3 text-sm rounded-lg border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
+                  />
                   <p className="text-[10px] text-muted-foreground">Data de registro: hoje ({new Date().toLocaleDateString("pt-BR")})</p>
                 </div>
               ) : (
@@ -1170,11 +1381,60 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                   <TrendingUp className="w-3 h-3" /> Histórico Recente
                 </h4>
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
                   {selectedItem.priceHistory.map((entry, idx) => (
-                    <div key={idx} className="flex items-center justify-between py-1.5 border-b border-muted/50 last:border-0">
-                      <span className="text-sm text-muted-foreground">{entry.date}</span>
-                      <span className="text-sm font-bold">R$ {entry.price.toFixed(2)}</span>
+                    <div key={idx} className="border-b border-muted/50 last:border-0 py-1.5">
+                      {editingHistoryIdx === idx ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground shrink-0">{entry.date}</span>
+                            <div className="flex items-center gap-1 flex-1">
+                              <span className="text-xs font-bold text-muted-foreground">R$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={editHistoryPrice}
+                                onChange={(e) => setEditHistoryPrice(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveHistoryEdit(idx); if (e.key === "Escape") setEditingHistoryIdx(null); }}
+                                className="h-7 w-20 px-2 text-xs rounded-md border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
+                                autoFocus
+                              />
+                            </div>
+                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => saveHistoryEdit(idx)}>
+                              <Check className="w-3 h-3 text-primary" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingHistoryIdx(null)}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <input
+                            type="text"
+                            value={editHistoryLocation}
+                            onChange={(e) => setEditHistoryLocation(e.target.value)}
+                            placeholder="Local (ex: Supermercado X)"
+                            className="h-7 w-full px-2 text-xs rounded-md border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center justify-between cursor-pointer hover:bg-muted/30 rounded px-1 -mx-1"
+                          onClick={() => {
+                            setEditingHistoryIdx(idx);
+                            setEditHistoryPrice(String(entry.price));
+                            setEditHistoryLocation(entry.location ?? "");
+                          }}
+                          title="Clique para editar"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm text-muted-foreground">{entry.date}</span>
+                            {entry.location && (
+                              <span className="text-[10px] text-muted-foreground/70">{entry.location}</span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold">R$ {entry.price.toFixed(2)}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
