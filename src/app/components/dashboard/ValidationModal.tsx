@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, Plus, Pencil } from "lucide-react";
 
 export interface AIValidationData {
   matched: Array<{
@@ -21,6 +21,7 @@ export interface AIValidationData {
   unmatched_sefaz: Array<{
     sefaz_name: string;
     price: number;
+    suggested_name?: string;
   }>;
   unmatched_user: Array<{
     user_item_id: string;
@@ -28,16 +29,29 @@ export interface AIValidationData {
   }>;
 }
 
+export interface NewItemSuggestion {
+  sefaz_name: string;
+  suggested_name: string;
+  price: number;
+}
+
 interface ValidationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: AIValidationData | null;
-  onConfirm: (finalMatches: Array<{ user_item_id: string; sefaz_name: string; price: number }>) => void;
+  onConfirm: (
+    finalMatches: Array<{ user_item_id: string; sefaz_name: string; price: number }>,
+    newItems?: NewItemSuggestion[]
+  ) => void;
 }
 
 export function ValidationModal({ open, onOpenChange, data, onConfirm }: ValidationModalProps) {
   // State for tracking which AI matches the user kept checked
   const [approvedMatches, setApprovedMatches] = useState<Set<string>>(new Set());
+  // State for tracking which suggested new items the user wants to add
+  const [selectedNewItems, setSelectedNewItems] = useState<Set<number>>(new Set());
+  // State for edited suggested names
+  const [editedNames, setEditedNames] = useState<Record<number, string>>({});
   // Track previous data to reset state when new data arrives
   const [prevData, setPrevData] = useState(data);
 
@@ -46,6 +60,8 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
     if (data?.matched) {
       setApprovedMatches(new Set(data.matched.map(m => m.user_item_id)));
     }
+    setSelectedNewItems(new Set());
+    setEditedNames({});
   }
 
   if (!data) return null;
@@ -59,6 +75,18 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
     }
     setApprovedMatches(newSet);
   };
+
+  const toggleNewItem = (idx: number) => {
+    const newSet = new Set(selectedNewItems);
+    if (newSet.has(idx)) {
+      newSet.delete(idx);
+    } else {
+      newSet.add(idx);
+    }
+    setSelectedNewItems(newSet);
+  };
+
+  const suggestedItems = (data?.unmatched_sefaz ?? []).filter(item => item.suggested_name);
 
   const handleSave = () => {
     const finalMatches = [];
@@ -74,7 +102,19 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
       }
     }
 
-    onConfirm(finalMatches);
+    // Collect selected new items
+    const newItems: NewItemSuggestion[] = [];
+    suggestedItems.forEach((item, idx) => {
+      if (selectedNewItems.has(idx)) {
+        newItems.push({
+          sefaz_name: item.sefaz_name,
+          suggested_name: editedNames[idx]?.trim() || item.suggested_name!,
+          price: item.price,
+        });
+      }
+    });
+
+    onConfirm(finalMatches, newItems.length > 0 ? newItems : undefined);
     onOpenChange(false);
   };
 
@@ -125,8 +165,50 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
             </div>
           )}
 
-          {/* Unmatched receipt items (not matched to any list item) */}
-          {data.unmatched_sefaz && data.unmatched_sefaz.length > 0 && (
+          {/* Suggested new items from unmatched receipt items */}
+          {suggestedItems.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold flex items-center text-blue-600 dark:text-blue-400">
+                <Plus className="w-5 h-5 mr-2" />
+                Sugestões para Adicionar à Lista
+              </h3>
+              <p className="text-sm text-zinc-500">
+                Estes itens da nota não estão na sua lista. Selecione os que deseja adicionar:
+              </p>
+              <div className="border rounded-lg divide-y dark:border-zinc-800 dark:divide-zinc-800">
+                {suggestedItems.map((item, idx) => (
+                  <div key={`suggest-${idx}`} className="p-3 flex items-start gap-3 bg-blue-50/50 dark:bg-blue-950/20">
+                    <Checkbox
+                      id={`suggest-${idx}`}
+                      checked={selectedNewItems.has(idx)}
+                      onCheckedChange={() => toggleNewItem(idx)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <Pencil className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <input
+                          type="text"
+                          value={editedNames[idx] ?? item.suggested_name}
+                          onChange={(e) => setEditedNames(prev => ({ ...prev, [idx]: e.target.value }))}
+                          className="font-medium text-sm bg-transparent border-b border-dashed border-zinc-300 dark:border-zinc-600 focus:border-blue-500 focus:outline-none py-0.5 w-full"
+                        />
+                      </div>
+                      <div className="text-sm text-zinc-500 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-4">
+                        <span className="truncate flex-1 text-xs">↳ {item.sefaz_name}</span>
+                        <span className="font-medium shrink-0 text-zinc-900 dark:text-zinc-100">
+                          R$ {item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Unmatched receipt items without suggestions */}
+          {data.unmatched_sefaz && data.unmatched_sefaz.filter(i => !i.suggested_name).length > 0 && (
             <div className="space-y-3">
               <h3 className="font-semibold flex items-center text-amber-600 dark:text-amber-500">
                 <AlertCircle className="w-5 h-5 mr-2" />
@@ -136,7 +218,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
                 Estes itens estão na nota fiscal mas não foram associados a nenhum item da sua lista:
               </p>
               <div className="border rounded-lg divide-y dark:border-zinc-800 dark:divide-zinc-800">
-                {data.unmatched_sefaz.map((item, idx) => (
+                {data.unmatched_sefaz.filter(i => !i.suggested_name).map((item, idx) => (
                   <div key={`sefaz-extra-${idx}`} className="p-3 flex items-center justify-between bg-white dark:bg-zinc-950">
                     <span className="text-sm font-medium truncate flex-1">{item.sefaz_name}</span>
                     <span className="text-sm font-medium shrink-0 text-zinc-900 dark:text-zinc-100 ml-4">
