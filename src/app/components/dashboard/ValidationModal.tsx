@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2, AlertCircle, Plus } from "lucide-react";
+import { CheckCircle2, AlertCircle, Plus, Pencil } from "lucide-react";
 
 export interface AIValidationData {
   matched: Array<{
@@ -50,6 +50,8 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
   const [approvedMatches, setApprovedMatches] = useState<Set<string>>(new Set());
   // State for tracking which suggested new items the user wants to add
   const [selectedNewItems, setSelectedNewItems] = useState<Set<number>>(new Set());
+  // State for edited suggested names
+  const [editedNames, setEditedNames] = useState<Record<number, string>>({});
   // Track previous data to reset state when new data arrives
   const [prevData, setPrevData] = useState(data);
 
@@ -59,6 +61,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
       setApprovedMatches(new Set(data.matched.map(m => m.user_item_id)));
     }
     setSelectedNewItems(new Set());
+    setEditedNames({});
   }
 
   if (!data) return null;
@@ -105,7 +108,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
       if (selectedNewItems.has(idx)) {
         newItems.push({
           sefaz_name: item.sefaz_name,
-          suggested_name: item.suggested_name!,
+          suggested_name: editedNames[idx]?.trim() || item.suggested_name!,
           price: item.price,
         });
       }
@@ -182,12 +185,15 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
                       className="mt-1"
                     />
                     <div className="flex-1">
-                      <label
-                        htmlFor={`suggest-${idx}`}
-                        className="font-medium text-sm leading-none cursor-pointer"
-                      >
-                        {item.suggested_name}
-                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <Pencil className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <input
+                          type="text"
+                          value={editedNames[idx] ?? item.suggested_name}
+                          onChange={(e) => setEditedNames(prev => ({ ...prev, [idx]: e.target.value }))}
+                          className="font-medium text-sm bg-transparent border-b border-dashed border-zinc-300 dark:border-zinc-600 focus:border-blue-500 focus:outline-none py-0.5 w-full"
+                        />
+                      </div>
                       <div className="text-sm text-zinc-500 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-4">
                         <span className="truncate flex-1 text-xs">↳ {item.sefaz_name}</span>
                         <span className="font-medium shrink-0 text-zinc-900 dark:text-zinc-100">

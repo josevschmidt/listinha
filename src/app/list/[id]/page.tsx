@@ -168,16 +168,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [aiSuggestedCategory, setAiSuggestedCategory] = useState("");
   const [isCategorizing, setIsCategorizing] = useState(false);
 
-  // Category order (drag & drop)
-  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(`listinha-cat-order-${listId}`);
-      if (saved) {
-        try { return JSON.parse(saved); } catch { /* ignore */ }
-      }
-    }
-    return [...CATEGORIES];
-  });
+  // Category order (drag & drop) - synced from Firestore list document
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([...CATEGORIES]);
+  const categoryOrderLoaded = useRef(false);
   const [showCategoryOrder, setShowCategoryOrder] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -228,6 +221,14 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       unsubItems();
     };
   }, [user, listId, router]);
+
+  // ── Sync category order from Firestore list document ────────────────────────
+  useEffect(() => {
+    if (list?.category_order && !categoryOrderLoaded.current) {
+      setCategoryOrder(list.category_order);
+      categoryOrderLoaded.current = true;
+    }
+  }, [list]);
 
   // ── AI auto-categorize existing uncategorized items ─────────────────────────
   const categorizingRef = useRef<Set<string>>(new Set());
@@ -570,13 +571,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     updatedHistory[idx] = {
       ...updatedHistory[idx],
       price: Math.round(newPrice * 100) / 100,
-      ...(editHistoryLocation.trim() ? { location: editHistoryLocation.trim() } : {}),
     };
-    if (!editHistoryLocation.trim() && updatedHistory[idx].location) {
-      delete updatedHistory[idx].location;
-    }
     if (editHistoryLocation.trim()) {
       updatedHistory[idx].location = editHistoryLocation.trim();
+    } else {
+      delete updatedHistory[idx].location;
     }
 
     const averagePrice = Math.round((updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length) * 100) / 100;
@@ -590,6 +589,30 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       setEditingHistoryIdx(null);
     } catch (err) {
       console.error("Error updating price history:", err);
+    }
+  };
+
+  const deleteHistoryEntry = async (idx: number) => {
+    if (!selectedItem || !selectedItem.priceHistory) return;
+
+    const updatedHistory = selectedItem.priceHistory.filter((_, i) => i !== idx);
+    const averagePrice = updatedHistory.length > 0
+      ? Math.round((updatedHistory.reduce((sum, e) => sum + e.price, 0) / updatedHistory.length) * 100) / 100
+      : null;
+
+    try {
+      await updateDoc(doc(db, "lists", listId, "items", selectedItem.id), {
+        averagePrice,
+        priceHistory: updatedHistory,
+      });
+      setSelectedItem({
+        ...selectedItem,
+        averagePrice: averagePrice ?? undefined,
+        priceHistory: updatedHistory,
+      });
+      setEditingHistoryIdx(null);
+    } catch (err) {
+      console.error("Error deleting price history entry:", err);
     }
   };
 
@@ -611,7 +634,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     const [moved] = newOrder.splice(dragIdx, 1);
     newOrder.splice(idx, 0, moved);
     setCategoryOrder(newOrder);
-    localStorage.setItem(`listinha-cat-order-${listId}`, JSON.stringify(newOrder));
+    updateDoc(doc(db, "lists", listId), { category_order: newOrder }).catch(console.error);
     setDragIdx(null);
     setDragOverIdx(null);
   };
@@ -1408,13 +1431,24 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                               <X className="w-3 h-3" />
                             </Button>
                           </div>
-                          <input
-                            type="text"
-                            value={editHistoryLocation}
-                            onChange={(e) => setEditHistoryLocation(e.target.value)}
-                            placeholder="Local (ex: Supermercado X)"
-                            className="h-7 w-full px-2 text-xs rounded-md border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
-                          />
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={editHistoryLocation}
+                              onChange={(e) => setEditHistoryLocation(e.target.value)}
+                              placeholder="Local (ex: Supermercado X)"
+                              className="h-7 flex-1 px-2 text-xs rounded-md border border-border bg-background text-foreground focus:outline-none focus:border-primary/60"
+                            />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                              onClick={() => deleteHistoryEntry(idx)}
+                              title="Excluir entrada"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         <div

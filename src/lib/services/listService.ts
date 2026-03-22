@@ -23,6 +23,7 @@ export interface List {
   share_code: string;
   owner_id: string;
   member_ids?: string[];
+  category_order?: string[];
   created_at: Timestamp | Date;
 }
 
