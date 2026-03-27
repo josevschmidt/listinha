@@ -110,6 +110,7 @@ interface Item {
   created_at?: { seconds: number } | Date;
   completed_at?: { seconds: number } | Date;
   completion_history?: CompletionEntry[];
+  description?: string;
 }
 
 type SortKey = "default" | "az" | "category" | "price";
@@ -168,6 +169,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [modalCategory, setModalCategory] = useState<string>("");
   const [modalFieldsDirty, setModalFieldsDirty] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
+  const [modalDescription, setModalDescription] = useState<string>("");
+  const [modalDescriptionDirty, setModalDescriptionDirty] = useState(false);
 
   // Manual price entry
   const [showManualPrice, setShowManualPrice] = useState(false);
@@ -500,6 +503,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setModalUnit(item.unit ?? "");
     setModalCategory(item.category ?? "");
     setModalFieldsDirty(false);
+    setModalDescription(item.description ?? "");
+    setModalDescriptionDirty(false);
     setShowManualPrice(false);
     setManualPrice("");
     setManualPriceLocation("");
@@ -513,10 +518,15 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current);
       saveModalFields(selectedItem.id, modalQty, modalUnit, modalCategory);
     }
+    if (modalDescriptionDirty && selectedItem) {
+      if (modalDescSaveTimerRef.current) clearTimeout(modalDescSaveTimerRef.current);
+      updateDoc(doc(db, "lists", listId, "items", selectedItem.id), { description: modalDescription || null }).catch(console.error);
+    }
     setIsModalOpen(false);
     setSelectedItem(null);
     setIsEditingItemName(false);
     setModalFieldsDirty(false);
+    setModalDescriptionDirty(false);
   };
 
   const saveItemName = async () => {
@@ -563,6 +573,21 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }, 600);
     return () => { if (modalSaveTimerRef.current) clearTimeout(modalSaveTimerRef.current); };
   }, [modalQty, modalUnit, modalCategory, modalFieldsDirty, selectedItem, saveModalFields]);
+
+  // Auto-save description with debounce
+  const modalDescSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!modalDescriptionDirty || !selectedItem) return;
+    if (modalDescSaveTimerRef.current) clearTimeout(modalDescSaveTimerRef.current);
+    const itemId = selectedItem.id;
+    const desc = modalDescription;
+    modalDescSaveTimerRef.current = setTimeout(() => {
+      updateDoc(doc(db, "lists", listId, "items", itemId), { description: desc || null })
+        .catch(console.error)
+        .finally(() => setModalDescriptionDirty(false));
+    }, 800);
+    return () => { if (modalDescSaveTimerRef.current) clearTimeout(modalDescSaveTimerRef.current); };
+  }, [modalDescription, modalDescriptionDirty, selectedItem, listId]);
 
   // ── Manual price entry ─────────────────────────────────────────────────
   const saveManualPrice = async () => {
@@ -1100,9 +1125,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   </div>
 
                   {/* Name + meta */}
-                  <div className="flex flex-col flex-1 overflow-hidden">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-base font-semibold truncate ${item.status === "bought" ? "line-through opacity-50" : ""}`}>
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <div className="flex items-start gap-2 flex-wrap">
+                      <span className={`text-base font-semibold break-words min-w-0 ${item.status === "bought" ? "line-through opacity-50" : ""}`}>
                         {item.name}
                       </span>
                       {item.quantity != null && (
@@ -1133,6 +1158,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                         </span>
                       )}
                     </div>
+                    {isTodoList && item.description && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 break-words">
+                        {item.description}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1317,7 +1347,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             ) : (
               <div className="flex items-start justify-between gap-2">
                 <DialogTitle
-                  className="text-2xl font-bold truncate cursor-pointer hover:opacity-80 transition-opacity"
+                  className="text-2xl font-bold break-words cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => { setItemNameDraft(selectedItem?.name ?? ""); setIsEditingItemName(true); }}
                   title="Clique para editar"
                 >
@@ -1332,6 +1362,22 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
           </DialogHeader>
 
           <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
+            {/* Todo list: description field */}
+            {isTodoList && selectedItem && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Detalhes</p>
+                <textarea
+                  value={modalDescription}
+                  onChange={(e) => { setModalDescription(e.target.value); setModalDescriptionDirty(true); }}
+                  placeholder="Adicionar detalhes..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 resize-none"
+                />
+                {modalDescriptionDirty && (
+                  <span className="text-[11px] text-muted-foreground italic">Salvando...</span>
+                )}
+              </div>
+            )}
             {/* Todo list: dates and completion history */}
             {isTodoList && selectedItem && (
               <div className="space-y-3">
