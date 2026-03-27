@@ -2,8 +2,11 @@
   "name": "Listinha",
   "short_name": "Listinha",
   "description": "Seu rastreador de preços e lista de compras inteligente.",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay"],
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "icons": [
@@ -17,5 +20,13 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "gcm_sender_id": "103953800507",
+  "share_target": {
+    "action": "/dashboard",
+    "method": "GET",
+    "params": {
+      "text": "text"
+    }
+  }
 }
