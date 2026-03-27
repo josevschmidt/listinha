@@ -2,6 +2,7 @@
   "name": "Listinha",
   "short_name": "Listinha",
   "description": "Seu rastreador de preços e lista de compras inteligente.",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
