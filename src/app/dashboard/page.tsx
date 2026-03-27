@@ -123,7 +123,7 @@ export default function DashboardPage() {
   const hasTodoLists = lists.some(l => (l.type ?? "shopping") === "todo");
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-dvh bg-background flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-border">
         <div className="max-w-5xl mx-auto px-5 sm:px-6 h-14 flex items-center justify-between">
@@ -150,13 +150,13 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className={`flex-1 max-w-5xl w-full mx-auto px-5 sm:px-6 py-6 space-y-6 ${hasTodoLists ? "pb-16" : ""}`}>
+      <main className="flex-1 overflow-y-auto max-w-5xl w-full mx-auto px-5 sm:px-6 py-6 space-y-6">
         {/* Hero section */}
         <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-4 sm:p-5 shadow-sm">
           <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
             Gerencie suas compras e acompanhe os preços com inteligência.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <JoinListDialog />
             <CreateListDialog />
           </div>
@@ -198,10 +198,9 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* Fixed todo footer panel */}
+      {/* Todo footer panel */}
       {hasTodoLists && (
-        <div className="fixed bottom-0 left-0 right-0 z-20">
-          <div className="bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
+        <div className="bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
             {/* Header bar */}
             <button
               className="w-full flex items-center justify-between px-5 h-12 hover:bg-muted/30 transition-colors"
@@ -246,11 +245,11 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }
+
 
 function ListGrid({
   lists,
