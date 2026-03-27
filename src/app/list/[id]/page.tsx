@@ -251,6 +251,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [list]);
 
+  // ── Derived (needed before hooks below) ─────────────────────────────────────
+  const isTodoList = (list?.type ?? "shopping") === "todo";
+  const isShoppingList = !isTodoList;
+
   // ── AI auto-categorize existing uncategorized items (shopping lists only) ────
   const categorizingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -307,8 +311,6 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const isOwner = list?.owner_id === user?.uid;
-  const isTodoList = (list?.type ?? "shopping") === "todo";
-  const isShoppingList = !isTodoList;
 
   const visibleItems = items
     .filter((item) => undoState?.item.id !== item.id) // hide item pending undo
