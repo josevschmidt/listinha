@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files, ListChecks } from "lucide-react";
+import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files, ListChecks, ChevronUp, ChevronDown } from "lucide-react";
 import { CreateListDialog } from "@/app/components/dashboard/CreateListDialog";
 import { JoinListDialog } from "@/app/components/dashboard/JoinListDialog";
 import { listService, List } from "@/lib/services/listService";
@@ -15,6 +15,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+
+// ── Color palette for list tags in the footer panel ───────────────────────────
+const LIST_TAG_COLORS = [
+  "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300",
+  "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300",
+  "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
+  "bg-pink-100 text-pink-700 dark:bg-pink-900/50 dark:text-pink-300",
+];
+
+interface TodoItem {
+  id: string;
+  name: string;
+  listId: string;
+  listName: string;
+  colorIdx: number;
+}
+
+function listColorIndex(listId: string): number {
+  let h = 0;
+  for (let i = 0; i < listId.length; i++) h = (h * 31 + listId.charCodeAt(i)) % LIST_TAG_COLORS.length;
+  return h;
+}
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
@@ -22,14 +50,13 @@ export default function DashboardPage() {
   const [lists, setLists] = useState<List[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
   const [listsError, setListsError] = useState<string | null>(null);
+  const [todoItems, setTodoItems] = useState<TodoItem[]>([]);
+  const [footerExpanded, setFooterExpanded] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
+    if (!loading && !user) router.push("/login");
   }, [user, loading, router]);
 
-  // Migrate existing lists without type to "shopping"
   useEffect(() => {
     if (!user) return;
     listService.migrateListsWithoutType(user.uid).catch(console.error);
@@ -37,8 +64,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-
-    // Subscribe to all lists where the user is a member (owned + shared)
     const unsubscribe = listService.subscribeToMemberLists(user.uid, (fetchedLists, error) => {
       if (error) {
         setListsError("Não foi possível carregar suas listas. Verifique sua conexão e tente novamente.");
@@ -54,9 +79,34 @@ export default function DashboardPage() {
       setListsError(null);
       setListsLoading(false);
     });
-
     return () => unsubscribe();
   }, [user]);
+
+  // Subscribe to pending items from all todo lists
+  useEffect(() => {
+    const todoLists = lists.filter(l => (l.type ?? "shopping") === "todo");
+    if (todoLists.length === 0) {
+      setTodoItems([]);
+      return;
+    }
+
+    const itemsByList = new Map<string, TodoItem[]>();
+    const unsubscribers = todoLists.map((list) => {
+      const colorIdx = listColorIndex(list.id);
+      return onSnapshot(collection(db, "lists", list.id, "items"), (snap) => {
+        itemsByList.set(
+          list.id,
+          snap.docs
+            .map(d => ({ id: d.id, ...(d.data() as { name: string; status: string }) }))
+            .filter(item => item.status === "pending")
+            .map(item => ({ id: item.id, name: item.name, listId: list.id, listName: list.name, colorIdx }))
+        );
+        setTodoItems(Array.from(itemsByList.values()).flat());
+      });
+    });
+
+    return () => unsubscribers.forEach(u => u());
+  }, [lists]);
 
   if (loading || !user) {
     return (
@@ -68,6 +118,7 @@ export default function DashboardPage() {
 
   const ownedLists = lists.filter(l => l.owner_id === user.uid);
   const sharedLists = lists.filter(l => l.owner_id !== user.uid);
+  const hasTodoLists = lists.some(l => (l.type ?? "shopping") === "todo");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -97,16 +148,13 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-5 sm:px-6 py-6 space-y-6">
+      <main className={`flex-1 max-w-5xl w-full mx-auto px-5 sm:px-6 py-6 space-y-6 ${hasTodoLists ? "pb-16" : ""}`}>
         {/* Hero section */}
-        <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-5 sm:p-6 shadow-sm">
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground mb-1">
-            Suas Listas
-          </h1>
-          <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+        <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-4 sm:p-5 shadow-sm">
+          <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
             Gerencie suas compras e acompanhe os preços com inteligência.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-2">
+          <div className="flex gap-2">
             <JoinListDialog />
             <CreateListDialog />
           </div>
@@ -130,7 +178,6 @@ export default function DashboardPage() {
               onNavigate={(id) => router.push(`/list/${id}`)}
               emptyMessage="Você ainda não possui nenhuma lista."
             />
-
             {sharedLists.length > 0 && (
               <div className="space-y-3">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1">
@@ -148,6 +195,57 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      {/* Fixed todo footer panel */}
+      {hasTodoLists && (
+        <div className="fixed bottom-0 left-0 right-0 z-20">
+          <div className="bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
+            {/* Header bar */}
+            <button
+              className="w-full flex items-center justify-between px-5 h-12 hover:bg-muted/30 transition-colors"
+              onClick={() => setFooterExpanded(prev => !prev)}
+            >
+              <div className="flex items-center gap-2">
+                <ListChecks className="w-4 h-4 text-primary" />
+                <span className="text-sm font-bold text-foreground">Minhas tarefas</span>
+                {todoItems.length > 0 && (
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary leading-none">
+                    {todoItems.length}
+                  </span>
+                )}
+              </div>
+              {footerExpanded
+                ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                : <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              }
+            </button>
+            {/* Expanded content */}
+            {footerExpanded && (
+              <div className="max-h-[40vh] overflow-y-auto divide-y divide-border/50 border-t border-border/50">
+                {todoItems.length === 0 ? (
+                  <div className="px-5 py-4 text-sm text-muted-foreground text-center">
+                    Nenhuma tarefa pendente.
+                  </div>
+                ) : (
+                  todoItems.map(item => (
+                    <div
+                      key={`${item.listId}-${item.id}`}
+                      className="flex items-center gap-3 px-5 py-2.5 hover:bg-muted/20 cursor-pointer transition-colors"
+                      onClick={() => router.push(`/list/${item.listId}`)}
+                    >
+                      <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/20 shrink-0" />
+                      <span className="text-sm flex-1 min-w-0 break-words text-foreground">{item.name}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 max-w-[120px] truncate ${LIST_TAG_COLORS[item.colorIdx]}`}>
+                        {item.listName}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -211,17 +309,18 @@ function ListGrid({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {lists.map((list) => {
           const isOwner = list.owner_id === userId;
+          const isTodo = (list.type ?? "shopping") === "todo";
           return (
             <div
               key={list.id}
               onClick={() => onNavigate(list.id)}
-              className="group relative bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer flex flex-col gap-3 overflow-hidden"
+              className="group relative bg-card border border-border rounded-xl p-3.5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer flex flex-col gap-2 overflow-hidden"
             >
-              <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/60 to-transparent rounded-t-2xl" />
+              <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/60 to-transparent rounded-t-xl" />
 
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-bold text-base text-foreground truncate leading-tight">{list.name}</h3>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 -mt-1 -mr-2">
+                <h3 className="font-bold text-sm text-foreground break-words min-w-0 flex-1 leading-tight">{list.name}</h3>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 -mt-1 -mr-1.5">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -244,17 +343,13 @@ function ListGrid({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                  {(list.type ?? "shopping") === "todo" ? <><ListChecks className="w-3 h-3" /> Afazeres</> : <><ShoppingCart className="w-3 h-3" /> Mercado</>}
+              <div className="flex items-center justify-between gap-2 mt-auto">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
+                  {isTodo ? <><ListChecks className="w-3 h-3" /> Afazeres</> : <><ShoppingCart className="w-3 h-3" /> Mercado</>}
                 </span>
-                <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold tracking-wider">
-                  {list.share_code}
+                <span className="flex items-center gap-1 text-primary text-xs font-bold group-hover:gap-1.5 transition-all shrink-0">
+                  {isTodo ? "Ver tarefas" : "Ver itens"} <ArrowRight className="w-3 h-3" />
                 </span>
-              </div>
-
-              <div className="flex items-center gap-1 text-primary text-xs font-bold group-hover:gap-2 transition-all mt-auto">
-                {(list.type ?? "shopping") === "todo" ? "Ver tarefas" : "Ver itens"} <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
           );
