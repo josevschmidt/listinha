@@ -94,6 +94,10 @@ interface PriceEntry {
   location?: string;
 }
 
+interface CompletionEntry {
+  completed_at: string;
+}
+
 interface Item {
   id: string;
   name: string;
@@ -103,6 +107,9 @@ interface Item {
   category?: string;
   averagePrice?: number;
   priceHistory?: PriceEntry[];
+  created_at?: { seconds: number } | Date;
+  completed_at?: { seconds: number } | Date;
+  completion_history?: CompletionEntry[];
 }
 
 type SortKey = "default" | "az" | "category" | "price";
@@ -110,6 +117,20 @@ type SortKey = "default" | "az" | "category" | "price";
 interface UndoState {
   item: Item;
   timeoutId: ReturnType<typeof setTimeout>;
+}
+
+function formatTimestamp(ts: { seconds: number } | Date | undefined): string {
+  if (!ts) return "";
+  const d = "seconds" in ts ? new Date(ts.seconds * 1000) : ts;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+    .replace(".", "");
+}
+
+function formatTimestampShort(ts: { seconds: number } | Date | undefined): string {
+  if (!ts) return "";
+  const d = "seconds" in ts ? new Date(ts.seconds * 1000) : ts;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+    .replace(".", "");
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -230,10 +251,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [list]);
 
-  // ── AI auto-categorize existing uncategorized items ─────────────────────────
+  // ── AI auto-categorize existing uncategorized items (shopping lists only) ────
   const categorizingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!listId || !items.length) return;
+    if (!listId || !items.length || isTodoList) return;
     const uncategorized = items.filter((i) => !i.category && !categorizingRef.current.has(i.id));
     if (!uncategorized.length) return;
 
@@ -255,11 +276,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
           categorizingRef.current.delete(item.id);
         });
     });
-  }, [items, listId]);
+  }, [items, listId, isTodoList]);
 
-  // ── AI auto-categorize (debounced) ─────────────────────────────────────────
+  // ── AI auto-categorize (debounced, shopping lists only) ────────────────────
   useEffect(() => {
-    if (!newItemName.trim() || addCategory) {
+    if (isTodoList || !newItemName.trim() || addCategory) {
       setAiSuggestedCategory("");
       return;
     }
@@ -282,10 +303,12 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [newItemName, addCategory]);
+  }, [newItemName, addCategory, isTodoList]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const isOwner = list?.owner_id === user?.uid;
+  const isTodoList = (list?.type ?? "shopping") === "todo";
+  const isShoppingList = !isTodoList;
 
   const visibleItems = items
     .filter((item) => undoState?.item.id !== item.id) // hide item pending undo
@@ -312,6 +335,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
   const pendingCount = visibleItems.filter((i) => i.status === "pending").length;
   const boughtCount = visibleItems.filter((i) => i.status === "bought").length;
+  const pendingLabel = isTodoList ? "pendente" : "pendente";
+  const doneLabel = isTodoList ? "feito" : "comprado";
+  const doneLabelPlural = isTodoList ? "feitos" : "comprados";
 
   const usedCategories = Array.from(new Set(items.map((i) => i.category).filter(Boolean))) as string[];
 
@@ -402,7 +428,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         status: "pending",
         ...(addQty && !isNaN(Number(addQty)) && { quantity: Number(addQty) }),
         ...(addUnit && { unit: addUnit }),
-        ...(categoryToSave && { category: categoryToSave }),
+        ...(isShoppingList && categoryToSave && { category: categoryToSave }),
         created_at: serverTimestamp(),
       });
     } catch (err) {
@@ -414,7 +440,23 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const toggleItemStatus = async (item: Item) => {
     const newStatus = item.status === "pending" ? "bought" : "pending";
     try {
-      await updateDoc(doc(db, "lists", listId, "items", item.id), { status: newStatus });
+      if (isTodoList && newStatus === "bought") {
+        // For todo lists, record completion timestamp and history
+        const now = new Date().toISOString();
+        const history: CompletionEntry[] = [...(item.completion_history ?? []), { completed_at: now }];
+        await updateDoc(doc(db, "lists", listId, "items", item.id), {
+          status: newStatus,
+          completed_at: serverTimestamp(),
+          completion_history: history,
+        });
+      } else if (isTodoList && newStatus === "pending") {
+        await updateDoc(doc(db, "lists", listId, "items", item.id), {
+          status: newStatus,
+          completed_at: null,
+        });
+      } else {
+        await updateDoc(doc(db, "lists", listId, "items", item.id), { status: newStatus });
+      }
     } catch (err) {
       console.error("Error toggling status:", err);
     }
@@ -690,8 +732,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
     const formatItem = (item: Item) => {
       let line = `• ${item.name}`;
-      if (item.quantity != null) line += ` (${item.quantity}${item.unit ? " " + item.unit : ""})`;
-      if (item.averagePrice != null) line += ` — Média: R$ ${item.averagePrice.toFixed(2)}`;
+      if (isShoppingList) {
+        if (item.quantity != null) line += ` (${item.quantity}${item.unit ? " " + item.unit : ""})`;
+        if (item.averagePrice != null) line += ` — Média: R$ ${item.averagePrice.toFixed(2)}`;
+      }
       return line;
     };
 
@@ -699,11 +743,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     text += `Código: ${list.share_code}\n`;
     text += `─────────────────\n`;
     if (pending.length) {
-      text += `\n🛒 A comprar (${pending.length}):\n`;
+      text += `\n${isTodoList ? "📝 Pendentes" : "🛒 A comprar"} (${pending.length}):\n`;
       text += pending.map(formatItem).join("\n");
     }
     if (bought.length) {
-      text += `\n\n✅ Comprados (${bought.length}):\n`;
+      text += `\n\n✅ ${isTodoList ? "Feitos" : "Comprados"} (${bought.length}):\n`;
       text += bought.map(formatItem).join("\n");
     }
     text += `\n\n─────────────────\nExportado pelo Listinha`;
@@ -843,13 +887,17 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
           {/* Action buttons */}
           <div className="flex items-center gap-1 shrink-0">
-            <Button variant="outline" size="sm" onClick={() => router.push(`/list/${listId}/scan`)} className="rounded-full font-bold border-2 hidden sm:flex">
-              <Camera className="w-4 h-4 mr-1.5" />
-              Escanear
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => router.push(`/list/${listId}/scan`)} className="rounded-full sm:hidden h-8 w-8">
-              <Camera className="w-4 h-4" />
-            </Button>
+            {isShoppingList && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => router.push(`/list/${listId}/scan`)} className="rounded-full font-bold border-2 hidden sm:flex">
+                  <Camera className="w-4 h-4 mr-1.5" />
+                  Escanear
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => router.push(`/list/${listId}/scan`)} className="rounded-full sm:hidden h-8 w-8">
+                  <Camera className="w-4 h-4" />
+                </Button>
+              </>
+            )}
 
             {/* Menu */}
             <div className="relative">
@@ -914,7 +962,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Ordenar por</p>
               <div className="flex flex-wrap gap-1.5">
-                {(["default", "az", "category", "price"] as SortKey[]).map((key) => {
+                {((isTodoList ? ["default", "az"] : ["default", "az", "category", "price"]) as SortKey[]).map((key) => {
                   const labels: Record<SortKey, string> = { default: "Padrão", az: "A–Z", category: "Categoria", price: "Preço médio" };
                   return (
                     <button
@@ -931,8 +979,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               </div>
             </div>
 
-            {/* Category filter */}
-            {usedCategories.length > 0 && (
+            {/* Category filter (shopping lists only) */}
+            {isShoppingList && usedCategories.length > 0 && (
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Filtrar por categoria</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -959,8 +1007,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               </div>
             )}
 
-            {/* Category reorder */}
-            <div>
+            {/* Category reorder (shopping lists only) */}
+            {isShoppingList && <div>
               <button
                 onClick={() => setShowCategoryOrder(!showCategoryOrder)}
                 className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1 hover:opacity-80"
@@ -995,16 +1043,16 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   <p className="text-[10px] text-muted-foreground mt-1">Arraste para reordenar</p>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         )}
 
         {/* ── Item count summary ── */}
         {items.length > 0 && (
           <div className="flex items-center gap-3 px-1">
-            <span className="text-xs text-muted-foreground font-medium">{pendingCount} pendente{pendingCount !== 1 ? "s" : ""}</span>
+            <span className="text-xs text-muted-foreground font-medium">{pendingCount} {pendingLabel}{pendingCount !== 1 ? "s" : ""}</span>
             <span className="text-muted-foreground/40">·</span>
-            <span className="text-xs text-primary font-bold">{boughtCount} comprado{boughtCount !== 1 ? "s" : ""}</span>
+            <span className="text-xs text-primary font-bold">{boughtCount} {boughtCount !== 1 ? doneLabelPlural : doneLabel}</span>
             {(search || categoryFilter) && (
               <>
                 <span className="text-muted-foreground/40">·</span>
@@ -1021,7 +1069,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center">
                 <CheckCircle2 className="w-8 h-8 text-muted-foreground/30" />
               </div>
-              <p className="text-base font-medium">Nenhum item ainda.<br />Adicione seu primeiro item abaixo!</p>
+              <p className="text-base font-medium">{isTodoList ? "Nenhuma tarefa ainda." : "Nenhum item ainda."}<br />Adicione {isTodoList ? "sua primeira tarefa" : "seu primeiro item"} abaixo!</p>
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
@@ -1062,14 +1110,24 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      {item.category && (
+                      {isShoppingList && item.category && (
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${CATEGORY_COLORS[item.category] || "bg-muted text-muted-foreground"}`}>
                           {item.category}
                         </span>
                       )}
-                      {item.averagePrice != null && (
+                      {isShoppingList && item.averagePrice != null && (
                         <span className="text-[10px] font-bold text-primary/70 uppercase tracking-tight">
                           Média: R$ {item.averagePrice.toFixed(2)}
+                        </span>
+                      )}
+                      {isTodoList && item.created_at && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Criado {formatTimestampShort(item.created_at as { seconds: number })}
+                        </span>
+                      )}
+                      {isTodoList && item.status === "bought" && item.completed_at && (
+                        <span className="text-[10px] text-primary/70 font-bold">
+                          Feito {formatTimestampShort(item.completed_at as { seconds: number })}
                         </span>
                       )}
                     </div>
@@ -1106,8 +1164,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       {/* ── Add item form (fixed at bottom) ── */}
       <div className="fixed bottom-0 left-0 right-0 z-10 pointer-events-none px-4 pb-[max(1rem,env(safe-area-inset-bottom,1rem))] pt-4 bg-gradient-to-t from-background via-background/95 to-transparent">
         <form onSubmit={handleAddItem} className="w-full max-w-2xl mx-auto pointer-events-auto space-y-2">
-          {/* Optional extras */}
-          {showAddExtras && (
+          {/* Optional extras (shopping lists only) */}
+          {isShoppingList && showAddExtras && (
             <div className="glass border rounded-2xl px-3 py-2.5 flex flex-wrap gap-2 items-center shadow-md">
               {/* Quantity */}
               <input
@@ -1157,7 +1215,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             <div className="glass border border-amber-300 dark:border-amber-700 rounded-2xl px-3 py-2 shadow-md flex items-center gap-2 bg-amber-50/80 dark:bg-amber-950/30">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
               <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                &ldquo;{duplicateItem.name}&rdquo; já existe na lista ({duplicateItem.status === "pending" ? "pendente" : "comprado"})
+                &ldquo;{duplicateItem.name}&rdquo; já existe na lista ({duplicateItem.status === "pending" ? "pendente" : isTodoList ? "feito" : "comprado"})
               </span>
             </div>
           )}
@@ -1165,7 +1223,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
           {/* Bought item suggestions */}
           {boughtSuggestions.length > 0 && (
             <div className="glass border rounded-2xl px-3 py-2 shadow-md space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Já na lista (comprado)</span>
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{isTodoList ? "Já na lista (feito)" : "Já na lista (comprado)"}</span>
               <div className="flex flex-wrap gap-1.5">
                 {boughtSuggestions.slice(0, 5).map((item) => (
                   <button
@@ -1181,8 +1239,8 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             </div>
           )}
 
-          {/* AI category suggestion */}
-          {(isCategorizing || aiSuggestedCategory) && !addCategory && (
+          {/* AI category suggestion (shopping lists only) */}
+          {isShoppingList && (isCategorizing || aiSuggestedCategory) && !addCategory && (
             <div className="flex items-center gap-1.5 px-3 py-1">
               <Sparkles className="w-3.5 h-3.5 text-primary/60 shrink-0" />
               {isCategorizing ? (
@@ -1204,16 +1262,18 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
           {/* Main input row */}
           <div className="glass p-2 rounded-3xl premium-shadow flex gap-2 border shadow-2xl">
-            <button
-              type="button"
-              onClick={() => setShowAddExtras(!showAddExtras)}
-              className="h-14 w-10 shrink-0 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors rounded-xl"
-              title="Mais opções"
-            >
-              {showAddExtras ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-            </button>
+            {isShoppingList && (
+              <button
+                type="button"
+                onClick={() => setShowAddExtras(!showAddExtras)}
+                className="h-14 w-10 shrink-0 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors rounded-xl"
+                title="Mais opções"
+              >
+                {showAddExtras ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+              </button>
+            )}
             <Input
-              placeholder="Adicionar item..."
+              placeholder={isTodoList ? "Adicionar tarefa..." : "Adicionar item..."}
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
               className="flex-1 h-14 text-lg border-none bg-transparent focus-visible:ring-0 px-1"
@@ -1264,14 +1324,51 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               </div>
             )}
             <DialogDescription className="text-primary-foreground/80 font-medium">
-              {selectedItem?.category && <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${CATEGORY_COLORS[selectedItem.category] || ""}`}>{selectedItem.category}</span>}
-              Detalhes e histórico de preços
+              {isShoppingList && selectedItem?.category && <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${CATEGORY_COLORS[selectedItem.category] || ""}`}>{selectedItem.category}</span>}
+              {isTodoList ? "Detalhes da tarefa" : "Detalhes e histórico de preços"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
-            {/* Qty / Unit / Category editors */}
-            <div className="space-y-2">
+            {/* Todo list: dates and completion history */}
+            {isTodoList && selectedItem && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {selectedItem.created_at && (
+                    <div className="bg-muted/30 p-3 rounded-2xl border border-border">
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Criado em</div>
+                      <div className="text-sm font-bold text-foreground">{formatTimestamp(selectedItem.created_at as { seconds: number })}</div>
+                    </div>
+                  )}
+                  {selectedItem.status === "bought" && selectedItem.completed_at && (
+                    <div className="bg-primary/5 p-3 rounded-2xl border border-primary/10">
+                      <div className="text-[10px] font-bold text-primary/60 uppercase mb-1">Concluído em</div>
+                      <div className="text-sm font-bold text-primary">{formatTimestamp(selectedItem.completed_at as { seconds: number })}</div>
+                    </div>
+                  )}
+                </div>
+                {selectedItem.completion_history && selectedItem.completion_history.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                      <CheckCircle2 className="w-3 h-3" /> Histórico de conclusões ({selectedItem.completion_history.length})
+                    </h4>
+                    <div className="space-y-1 max-h-[150px] overflow-y-auto pr-1">
+                      {[...selectedItem.completion_history].reverse().map((entry, idx) => (
+                        <div key={idx} className="flex items-center gap-2 py-1.5 border-b border-muted/50 last:border-0">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-primary/50 shrink-0" />
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(entry.completed_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(".", "")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Qty / Unit / Category editors (shopping lists only) */}
+            {isShoppingList && <div className="space-y-2">
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Quantidade e categoria</p>
               <div className="flex gap-2 flex-wrap">
                 <input
@@ -1319,9 +1416,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   {modalSaving ? "Salvando..." : "Salvo automaticamente"}
                 </span>
               )}
-            </div>
+            </div>}
 
-            {/* Price data */}
+            {/* Price data (shopping lists only) */}
+            {isShoppingList && <>
             {selectedItem?.averagePrice != null ? (
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-primary/5 p-3 rounded-2xl border border-primary/10">
@@ -1474,6 +1572,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                 </div>
               </div>
             )}
+            </>}
 
             {/* Actions */}
             <div className="flex gap-3 pt-1">

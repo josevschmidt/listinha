@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files } from "lucide-react";
+import { LogOut, ArrowRight, ShoppingCart, ListPlus, Trash2, LogOutIcon, Files, ListChecks } from "lucide-react";
 import { CreateListDialog } from "@/app/components/dashboard/CreateListDialog";
 import { JoinListDialog } from "@/app/components/dashboard/JoinListDialog";
 import { listService, List } from "@/lib/services/listService";
@@ -28,6 +28,12 @@ export default function DashboardPage() {
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Migrate existing lists without type to "shopping"
+  useEffect(() => {
+    if (!user) return;
+    listService.migrateListsWithoutType(user.uid).catch(console.error);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -238,15 +244,17 @@ function ListGrid({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Código</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  {(list.type ?? "shopping") === "todo" ? <><ListChecks className="w-3 h-3" /> Afazeres</> : <><ShoppingCart className="w-3 h-3" /> Mercado</>}
+                </span>
                 <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold tracking-wider">
                   {list.share_code}
                 </span>
               </div>
 
               <div className="flex items-center gap-1 text-primary text-xs font-bold group-hover:gap-2 transition-all mt-auto">
-                Ver itens <ArrowRight className="w-3.5 h-3.5" />
+                {(list.type ?? "shopping") === "todo" ? "Ver tarefas" : "Ver itens"} <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
           );

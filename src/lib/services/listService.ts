@@ -17,9 +17,12 @@ import {
   Timestamp,
 } from "firebase/firestore";
 
+export type ListType = "shopping" | "todo";
+
 export interface List {
   id: string;
   name: string;
+  type: ListType;
   share_code: string;
   owner_id: string;
   member_ids?: string[];
@@ -38,10 +41,11 @@ function generateShareCode() {
 }
 
 export const listService = {
-  async createList(name: string, userId: string, userEmail = "") {
+  async createList(name: string, userId: string, userEmail = "", type: ListType = "shopping") {
     const shareCode = `LST-${generateShareCode()}`;
     const docRef = await addDoc(collection(db, "lists"), {
       name,
+      type,
       share_code: shareCode,
       owner_id: userId,
       member_ids: [userId],
@@ -124,7 +128,7 @@ export const listService = {
       const listSnap = await getDoc(doc(db, "lists", sourceListId));
       if (!listSnap.exists()) return { success: false, error: "Lista não encontrada." };
       const source = listSnap.data() as List;
-      const newListId = await this.createList(`${source.name} (cópia)`, userId, userEmail);
+      const newListId = await this.createList(`${source.name} (cópia)`, userId, userEmail, source.type ?? "shopping");
       const itemsSnap = await getDocs(collection(db, "lists", sourceListId, "items"));
       await Promise.all(
         itemsSnap.docs.map((itemDoc) => {
@@ -173,5 +177,20 @@ export const listService = {
     } catch {
       return { success: false, error: "Erro ao sair da lista." };
     }
+  },
+
+  async migrateListsWithoutType(userId: string): Promise<number> {
+    const q = query(collection(db, "lists"), where("member_ids", "array-contains", userId));
+    const snapshot = await getDocs(q);
+    let migrated = 0;
+    await Promise.all(
+      snapshot.docs
+        .filter((d) => !d.data().type)
+        .map(async (d) => {
+          await updateDoc(doc(db, "lists", d.id), { type: "shopping" });
+          migrated++;
+        })
+    );
+    return migrated;
   },
 };
