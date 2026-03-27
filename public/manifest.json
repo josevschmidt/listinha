@@ -4,6 +4,7 @@
   "description": "Seu rastreador de preços e lista de compras inteligente.",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "icons": [
