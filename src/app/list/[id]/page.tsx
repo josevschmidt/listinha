@@ -436,6 +436,21 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         ...(isShoppingList && categoryToSave && { category: categoryToSave }),
         created_at: serverTimestamp(),
       });
+
+      // Send push notification to other list members
+      if (list?.member_ids && list.member_ids.length > 1) {
+        fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemName: name,
+            listName: list.name,
+            listId,
+            memberIds: list.member_ids,
+            senderUid: user.uid,
+          }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("Error adding item:", err);
     }
