@@ -85,9 +85,11 @@ export default function DashboardPage() {
   // Subscribe to pending items from all todo lists
   useEffect(() => {
     const todoLists = lists.filter(l => (l.type ?? "shopping") === "todo");
+
     if (todoLists.length === 0) {
-      setTodoItems([]);
-      return;
+      // setState must be in a callback, not directly in the effect body
+      const t = setTimeout(() => setTodoItems([]), 0);
+      return () => clearTimeout(t);
     }
 
     const itemsByList = new Map<string, TodoItem[]>();
