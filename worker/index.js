@@ -1,5 +1,5 @@
-// Service worker for handling FCM push notifications
-// No Firebase SDK needed here — we handle raw push events directly
+// Custom service worker code injected into the next-pwa generated SW
+// Handles FCM push notifications for Listinha
 
 self.addEventListener("push", (event) => {
   if (!event.data) return;

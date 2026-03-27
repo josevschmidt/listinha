@@ -17,13 +17,12 @@ export function useNotifications() {
     initialized.current = true;
 
     async function registerToken() {
-      // Register the FCM service worker
+      // Wait for the next-pwa service worker to be ready
       let registration: ServiceWorkerRegistration | undefined;
       try {
-        registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-        await navigator.serviceWorker.ready;
+        registration = await navigator.serviceWorker.ready;
       } catch (err) {
-        console.error("SW registration failed:", err);
+        console.error("SW not available:", err);
         return;
       }
 
