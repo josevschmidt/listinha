@@ -5,13 +5,11 @@ import { getApps } from "firebase-admin/app";
 
 export async function POST(request: NextRequest) {
   try {
-    const { itemName, listName, listId, memberIds, senderUid, body: customBody } = await request.json();
+    const { itemName, listName, listId, memberIds, senderUid } = await request.json();
 
     if (!itemName || !listName || !listId || !memberIds || !senderUid) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-
-    const notificationBody = customBody || `Adicionaram ${itemName} na lista ${listName}`;
 
     // Get admin messaging (initializes admin app if needed)
     const messaging = getAdminMessaging();
@@ -42,12 +40,12 @@ export async function POST(request: NextRequest) {
       tokens,
       notification: {
         title: "Listinha",
-        body: notificationBody,
+        body: `Adicionaram ${itemName} na lista ${listName}`,
       },
       webpush: {
         notification: {
           title: "Listinha",
-          body: notificationBody,
+          body: `Adicionaram ${itemName} na lista ${listName}`,
           icon: "/icons/icon-192x192.png",
           badge: "/icons/icon-192x192.png",
         },

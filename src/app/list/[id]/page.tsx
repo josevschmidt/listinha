@@ -399,7 +399,6 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             listId,
             memberIds: list.member_ids,
             senderUid: user.uid,
-            body: `Remarcaram ${item.name} como pendente na lista ${list.name}`,
           }),
         }).catch(() => {});
       }
@@ -440,7 +439,6 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               listId,
               memberIds: list.member_ids,
               senderUid: user.uid,
-              body: `Remarcaram ${existingItem.name} como pendente na lista ${list.name}`,
             }),
           }).catch(() => {});
         }
@@ -518,7 +516,6 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             listId,
             memberIds: list.member_ids,
             senderUid: user.uid,
-            body: `Remarcaram ${item.name} como pendente na lista ${list.name}`,
           }),
         }).catch(() => {});
       }
