@@ -388,6 +388,21 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     setShowAddExtras(false);
     try {
       await updateDoc(doc(db, "lists", listId, "items", item.id), { status: "pending" });
+      // Send push notification to other list members
+      if (list?.member_ids && list.member_ids.length > 1 && user) {
+        fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemName: item.name,
+            listName: list.name,
+            listId,
+            memberIds: list.member_ids,
+            senderUid: user.uid,
+            body: `Remarcaram ${item.name} como pendente na lista ${list.name}`,
+          }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("Error unmarking item:", err);
     }
@@ -414,6 +429,21 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       setShowAddExtras(false);
       try {
         await updateDoc(doc(db, "lists", listId, "items", existingItem.id), { status: "pending" });
+        // Send push notification to other list members
+        if (list?.member_ids && list.member_ids.length > 1) {
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              itemName: existingItem.name,
+              listName: list.name,
+              listId,
+              memberIds: list.member_ids,
+              senderUid: user.uid,
+              body: `Remarcaram ${existingItem.name} como pendente na lista ${list.name}`,
+            }),
+          }).catch(() => {});
+        }
       } catch (err) {
         console.error("Error unmarking item:", err);
       }
@@ -476,6 +506,21 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         });
       } else {
         await updateDoc(doc(db, "lists", listId, "items", item.id), { status: newStatus });
+      }
+      // Send push notification when item is remarked as pending
+      if (newStatus === "pending" && list?.member_ids && list.member_ids.length > 1 && user) {
+        fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemName: item.name,
+            listName: list.name,
+            listId,
+            memberIds: list.member_ids,
+            senderUid: user.uid,
+            body: `Remarcaram ${item.name} como pendente na lista ${list.name}`,
+          }),
+        }).catch(() => {});
       }
     } catch (err) {
       console.error("Error toggling status:", err);
