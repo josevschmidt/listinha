@@ -33,6 +33,8 @@ import {
   Plus,
   AlertTriangle,
   GripVertical,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { listService, List, MemberInfo } from "@/lib/services/listService";
 import { db } from "@/lib/firebase";
@@ -46,6 +48,7 @@ import {
   doc,
   deleteDoc,
   orderBy,
+  setDoc,
 } from "firebase/firestore";
 import { use } from "react";
 import {
@@ -55,6 +58,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { requestNotificationPermission } from "@/lib/firebase-messaging";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -111,6 +115,17 @@ interface Item {
   completed_at?: { seconds: number } | Date;
   completion_history?: CompletionEntry[];
   description?: string;
+  created_by?: string;
+  created_by_email?: string;
+  created_by_photo?: string;
+}
+
+interface PriceInsight {
+  item: Item;
+  lastPrice: number;
+  previousPrice: number;
+  delta: number;
+  percent: number;
 }
 
 type SortKey = "default" | "az" | "category" | "price";
@@ -132,6 +147,35 @@ function formatTimestampShort(ts: { seconds: number } | Date | undefined): strin
   const d = "seconds" in ts ? new Date(ts.seconds * 1000) : ts;
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
     .replace(".", "");
+}
+
+function getPriceInsights(items: Item[]): PriceInsight[] {
+  return items
+    .flatMap((item) => {
+      const history = item.priceHistory ?? [];
+      if (history.length < 2) return [];
+      const previous = history[history.length - 2].price;
+      const last = history[history.length - 1].price;
+      if (!previous || last <= previous) return [];
+      return [{
+        item,
+        lastPrice: last,
+        previousPrice: previous,
+        delta: Math.round((last - previous) * 100) / 100,
+        percent: Math.round(((last - previous) / previous) * 100),
+      }];
+    })
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, 3);
+}
+
+function getPriceStats(item?: Item | null) {
+  const history = item?.priceHistory ?? [];
+  const last = history[history.length - 1];
+  const min = history.length ? history.reduce((best, entry) => entry.price < best.price ? entry : best, history[0]) : null;
+  const average = item?.averagePrice ?? (history.length ? history.reduce((sum, entry) => sum + entry.price, 0) / history.length : null);
+  const isAboveAverage = !!last && !!average && history.length > 1 && last.price > average;
+  return { history, last, min, average, isAboveAverage };
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -314,6 +358,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const isOwner = list?.owner_id === user?.uid;
+  const notificationsEnabled = !!(user && list?.notification_preferences?.[user.uid] === true);
+  const priceInsights = isShoppingList ? getPriceInsights(items) : [];
+  const selectedPriceStats = getPriceStats(selectedItem);
 
   const visibleItems = items
     .filter((item) => undoState?.item.id !== item.id) // hide item pending undo
@@ -361,6 +408,39 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     await listService.renameList(listId, listNameDraft.trim());
     setListNameSaving(false);
     setIsEditingListName(false);
+  };
+
+  const setListNotifications = async (enabled: boolean) => {
+    if (!user || !list) return;
+    try {
+      if (enabled) {
+        if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+          alert("Este navegador nao suporta notificacoes push.");
+          return;
+        }
+        const registration = await navigator.serviceWorker.ready;
+        const token = await requestNotificationPermission(registration);
+        if (!token) {
+          alert("Nao foi possivel ativar as notificacoes. Verifique a permissao do navegador.");
+          return;
+        }
+        await setDoc(doc(db, "fcm_tokens", token), {
+          userId: user.uid,
+          token,
+          createdAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await updateDoc(doc(db, "lists", listId), {
+        notification_preferences: {
+          ...(list.notification_preferences ?? {}),
+          [user.uid]: enabled,
+        },
+      });
+    } catch (err) {
+      console.error("Error toggling notifications:", err);
+      alert("Nao foi possivel atualizar as notificacoes desta lista.");
+    }
   };
 
   // ── Duplicate detection ──────────────────────────────────────────────────────
@@ -459,6 +539,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
       await addDoc(collection(db, "lists", listId, "items"), {
         name,
         status: "pending",
+        created_by: user.uid,
+        created_by_email: user.email ?? "",
+        created_by_photo: user.photoURL ?? "",
         ...(addQty && !isNaN(Number(addQty)) && { quantity: Number(addQty) }),
         ...(addUnit && { unit: addUnit }),
         ...(isShoppingList && categoryToSave && { category: categoryToSave }),
@@ -993,6 +1076,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                   <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
                   <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[200px]">
                     <MenuButton icon={<Users className="w-4 h-4" />} label="Gerenciar membros" onClick={() => { setShowMenu(false); openMembersDialog(); }} />
+                    <MenuButton
+                      icon={notificationsEnabled ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                      label={notificationsEnabled ? "Desativar notificacoes" : "Ativar notificacoes"}
+                      onClick={() => { setShowMenu(false); setListNotifications(!notificationsEnabled); }}
+                    />
                     <MenuButton icon={<Files className="w-4 h-4" />} label={duplicating ? "Duplicando..." : "Duplicar lista"} onClick={() => { setShowMenu(false); handleDuplicate(); }} disabled={duplicating} />
                     <MenuButton icon={<Download className="w-4 h-4" />} label="Exportar lista" onClick={() => { setShowMenu(false); exportList(); }} />
                     <div className="h-px bg-border my-1" />
@@ -1040,6 +1128,34 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         </div>
 
         {/* ── Filters panel ── */}
+        {priceInsights.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Maiores altas recentes</p>
+            </div>
+            <div className="grid gap-2">
+              {priceInsights.map((insight) => (
+                <button
+                  key={insight.item.id}
+                  onClick={() => openModal(insight.item)}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-amber-500/5 px-3 py-2 text-left hover:bg-amber-500/10"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-foreground">{insight.item.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      R$ {insight.previousPrice.toFixed(2)} -&gt; R$ {insight.lastPrice.toFixed(2)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    +{insight.percent}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {showFilters && (
           <div className="bg-card border border-border rounded-2xl p-3 space-y-3">
             {/* Sort */}
@@ -1202,6 +1318,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
                       {isShoppingList && item.averagePrice != null && (
                         <span className="text-[10px] font-bold text-primary/70 uppercase tracking-tight">
                           Média: R$ {item.averagePrice.toFixed(2)}
+                        </span>
+                      )}
+                      {item.created_by_email && (
+                        <span className="text-[10px] text-muted-foreground">
+                          por {item.created_by_email}
                         </span>
                       )}
                       {isTodoList && item.created_at && (
@@ -1416,6 +1537,19 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
               {isShoppingList && selectedItem?.category && <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${CATEGORY_COLORS[selectedItem.category] || ""}`}>{selectedItem.category}</span>}
               {isTodoList ? "Detalhes da tarefa" : "Detalhes e histórico de preços"}
             </DialogDescription>
+            {selectedItem?.created_by_email && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-primary-foreground/80">
+                {selectedItem.created_by_photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={selectedItem.created_by_photo} alt="" className="h-5 w-5 rounded-full border border-white/30" />
+                ) : (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold">
+                    {selectedItem.created_by_email.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                Adicionado por {selectedItem.created_by_email}
+              </div>
+            )}
           </DialogHeader>
 
           <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
@@ -1543,6 +1677,47 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             ) : (
               <div className="bg-muted/30 p-3 rounded-2xl text-sm text-muted-foreground text-center">
                 Nenhum dado de preço ainda.
+              </div>
+            )}
+
+            {selectedPriceStats.history.length > 0 && (
+              <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {selectedPriceStats.min && (
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Menor preco</div>
+                      <div className="text-sm font-black text-foreground">R$ {selectedPriceStats.min.price.toFixed(2)}</div>
+                    </div>
+                  )}
+                  {selectedPriceStats.last?.location && (
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Ultimo mercado</div>
+                      <div className="truncate text-sm font-bold text-foreground">{selectedPriceStats.last.location}</div>
+                    </div>
+                  )}
+                </div>
+                {selectedPriceStats.isAboveAverage && selectedPriceStats.average && selectedPriceStats.last && (
+                  <div className="flex items-start gap-2 rounded-xl bg-amber-100/70 p-2 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Esse item esta acima da media: ultimo R$ {selectedPriceStats.last.price.toFixed(2)} vs media R$ {selectedPriceStats.average.toFixed(2)}.
+                  </div>
+                )}
+                <div className="flex h-24 items-end gap-1.5 pt-2">
+                  {selectedPriceStats.history.slice(-8).map((entry, idx, visibleHistory) => {
+                    const maxPrice = Math.max(...visibleHistory.map((h) => h.price));
+                    const height = maxPrice > 0 ? Math.max(12, Math.round((entry.price / maxPrice) * 88)) : 12;
+                    return (
+                      <div key={`${entry.date}-${idx}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                        <div
+                          className="w-full rounded-t-md bg-primary/70"
+                          style={{ height }}
+                          title={`${entry.date}: R$ ${entry.price.toFixed(2)}`}
+                        />
+                        <span className="w-full truncate text-center text-[9px] text-muted-foreground">{entry.date}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

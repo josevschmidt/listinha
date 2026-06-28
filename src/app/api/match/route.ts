@@ -41,13 +41,15 @@ export async function POST(request: Request) {
     3. O preço retornado deve ser sempre o PREÇO UNITÁRIO (por kg, por unidade, por litro, etc). Se o preço fornecido já for unitário, use-o diretamente. Se parecer ser um total (ex: quantidade × preço), divida pela quantidade para obter o unitário.
     4. Para cada item da nota que NÃO corresponde a nenhum item da lista (unmatched_sefaz), sugira um nome curto e amigável em português para adicionar à lista de compras. Por exemplo: "BARRA CHOCOLATE 90G LACTA BRANCO FEST" → "Barra de chocolate", "LEITE INT BATAVO 1L" → "Leite integral", "DET LIQ YPEZINHO 500ML" → "Detergente líquido".
     5. Retorne APENAS um objeto JSON válido seguindo ESTRITAMENTE a seguinte estrutura:
+       Inclua em cada match um campo "confidence" com valor "provavel" ou "duvidoso".
        {
          "matched": [
            {
              "user_item_id": "ID do item do userList que deu match",
              "user_item_name": "Nome original do item do usuário",
              "sefaz_name": "Nome do produto conforme veio na nota fiscal",
-             "price": 10.50
+             "price": 10.50,
+             "confidence": "provavel"
            }
          ],
          "unmatched_sefaz": [

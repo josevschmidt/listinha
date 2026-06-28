@@ -11,12 +11,15 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckCircle2, AlertCircle, Plus, Pencil } from "lucide-react";
 
+type MatchConfidence = "provavel" | "duvidoso";
+
 export interface AIValidationData {
   matched: Array<{
     user_item_id: string;
     user_item_name: string;
     sefaz_name: string;
     price: number;
+    confidence?: MatchConfidence;
   }>;
   unmatched_sefaz: Array<{
     sefaz_name: string;
@@ -58,7 +61,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
   if (data !== prevData) {
     setPrevData(data);
     if (data?.matched) {
-      setApprovedMatches(new Set(data.matched.map(m => m.user_item_id)));
+      setApprovedMatches(new Set(data.matched.filter(m => m.confidence !== "duvidoso").map(m => m.user_item_id)));
     }
     setSelectedNewItems(new Set());
     setEditedNames({});
@@ -88,6 +91,12 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
 
   const suggestedItems = (data?.unmatched_sefaz ?? []).filter(item => item.suggested_name);
 
+  const confidenceLabel = (confidence?: MatchConfidence) => confidence === "duvidoso" ? "Duvidoso" : "Provavel";
+  const confidenceClass = (confidence?: MatchConfidence) =>
+    confidence === "duvidoso"
+      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+      : "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300";
+
   const handleSave = () => {
     const finalMatches = [];
 
@@ -115,7 +124,6 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
     });
 
     onConfirm(finalMatches, newItems.length > 0 ? newItems : undefined);
-    onOpenChange(false);
   };
 
   return (
@@ -152,6 +160,9 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
                       >
                         {match.user_item_name}
                       </label>
+                      <span className={`ml-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${confidenceClass(match.confidence)}`}>
+                        {confidenceLabel(match.confidence)}
+                      </span>
                       <div className="text-sm text-zinc-500 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-4">
                         <span className="truncate flex-1">↳ {match.sefaz_name}</span>
                         <span className="font-medium shrink-0 text-zinc-900 dark:text-zinc-100">
@@ -187,6 +198,7 @@ export function ValidationModal({ open, onOpenChange, data, onConfirm }: Validat
                     <div className="flex-1">
                       <div className="flex items-center gap-1.5">
                         <Pencil className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Manual</span>
                         <input
                           type="text"
                           value={editedNames[idx] ?? item.suggested_name}

@@ -97,6 +97,7 @@ self.addEventListener("push", (event) => {
   const title = notification.title || "Listinha";
   const body = notification.body || "";
   const data = payload.data || {};
+  const link = payload.fcmOptions?.link || payload.webpush?.fcmOptions?.link || data.url || (data.listId ? `/list/${data.listId}` : "/dashboard");
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -104,7 +105,7 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192x192.png",
       badge: "/icons/icon-192x192.png",
       tag: data.listId || "listinha",
-      data,
+      data: { ...data, url: link },
     })
   );
 });
@@ -113,7 +114,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const listId = event.notification.data?.listId;
-  const url = listId ? `/list/${listId}` : "/dashboard";
+  const url = event.notification.data?.url || (listId ? `/list/${listId}` : "/dashboard");
 
   event.waitUntil(
     self.clients

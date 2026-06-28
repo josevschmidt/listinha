@@ -27,6 +27,7 @@ export interface List {
   owner_id: string;
   member_ids?: string[];
   category_order?: string[];
+  notification_preferences?: Record<string, boolean>;
   created_at: Timestamp | Date;
 }
 
@@ -49,6 +50,7 @@ export const listService = {
       share_code: shareCode,
       owner_id: userId,
       member_ids: [userId],
+      notification_preferences: { [userId]: true },
       created_at: serverTimestamp(),
     });
     await setDoc(doc(db, "lists", docRef.id, "shared_with", userId), {

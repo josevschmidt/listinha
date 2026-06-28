@@ -17,6 +17,20 @@ import {
 import { ValidationModal, AIValidationData, NewItemSuggestion } from "@/app/components/dashboard/ValidationModal";
 
 type ScanMode = "qr" | "photo" | "url";
+type ProcessingStep = "idle" | "reading-qr" | "loading-list" | "fetching-sefaz" | "reading-image" | "matching" | "reviewing" | "saving";
+
+const LAST_CAMERA_KEY = "listinha:last-camera-id";
+
+const PROCESSING_STEPS: Record<ProcessingStep, { title: string; description: string }> = {
+  idle: { title: "Pronto", description: "" },
+  "reading-qr": { title: "Lendo QR Code", description: "Confirmando o link da NFC-e..." },
+  "loading-list": { title: "Carregando lista", description: "Buscando os itens para comparar com a nota..." },
+  "fetching-sefaz": { title: "Buscando SEFAZ", description: "Abrindo a nota fiscal e extraindo os produtos..." },
+  "reading-image": { title: "Lendo imagem", description: "A IA esta identificando os produtos da foto..." },
+  matching: { title: "Cruzando itens", description: "Comparando a nota com sua lista de compras..." },
+  reviewing: { title: "Preparando revisao", description: "Organizando correspondencias provaveis e duvidosas..." },
+  saving: { title: "Salvando compras", description: "Atualizando historico de precos e itens comprados..." },
+};
 
 function getCameraScore(camera: CameraDevice, index: number) {
   const label = camera.label.toLowerCase();
@@ -60,6 +74,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [camerasLoaded, setCamerasLoaded] = useState(false);
+  const [processingStep, setProcessingStep] = useState<ProcessingStep>("idle");
 
   // URL mode
   const [urlInput, setUrlInput] = useState("");
@@ -90,6 +105,15 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     }
   }, []);
 
+  const resetReceiptState = useCallback(() => {
+    setScanResult(null);
+    setValidationData(null);
+    setEmissionDate(null);
+    setStoreName(null);
+    setShowModal(false);
+    setProcessingStep("idle");
+  }, []);
+
   useEffect(() => {
     if (!user || scanMode !== "qr" || camerasLoaded) return;
 
@@ -99,7 +123,12 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       .then((devices) => {
         if (cancelled) return;
         setCameras(devices);
-        setSelectedCameraId((current) => current ?? pickPreferredCamera(devices)?.id ?? null);
+        setSelectedCameraId((current) => {
+          if (current) return current;
+          const savedCameraId = typeof window !== "undefined" ? window.localStorage.getItem(LAST_CAMERA_KEY) : null;
+          if (savedCameraId && devices.some((camera) => camera.id === savedCameraId)) return savedCameraId;
+          return pickPreferredCamera(devices)?.id ?? null;
+        });
       })
       .catch((err) => {
         console.error("Camera list error:", err);
@@ -115,6 +144,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   }, [user, scanMode, camerasLoaded]);
 
   const getUserList = useCallback(async () => {
+    setProcessingStep("loading-list");
     const { collection, getDocs } = await import("firebase/firestore");
     const { db } = await import("@/lib/firebase");
 
@@ -132,6 +162,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   }, [listId]);
 
   const runAIMatch = useCallback(async (sefazItems: Array<{ name: string; price: number }>, userList: Array<{ id: string; name: string }>) => {
+    setProcessingStep("matching");
     const matchRes = await fetch("/api/match", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -143,12 +174,15 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   }, []);
 
   const processReceiptUrl = useCallback(async (url: string) => {
+    resetReceiptState();
     setProcessing(true);
     setError(null);
+    setScanResult(url);
 
     try {
       const userList = await getUserList();
 
+      setProcessingStep("fetching-sefaz");
       const sefazRes = await fetch("/api/sefaz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,6 +206,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
 
       const matchData = await runAIMatch(sefazData.items, userList);
 
+      setProcessingStep("reviewing");
       setValidationData(matchData);
       setProcessing(false);
       setShowModal(true);
@@ -180,17 +215,20 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       console.error(err);
       setError(err instanceof Error ? err.message : "Erro ao processar a nota fiscal.");
       setProcessing(false);
+      setProcessingStep("idle");
       setScanResult(null);
     }
-  }, [getUserList, runAIMatch]);
+  }, [getUserList, resetReceiptState, runAIMatch]);
 
   const processReceiptPhoto = useCallback(async (file: File) => {
+    resetReceiptState();
     setProcessing(true);
     setError(null);
 
     try {
       const userList = await getUserList();
 
+      setProcessingStep("reading-image");
       const formData = new FormData();
       formData.append("image", file);
 
@@ -216,6 +254,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
 
       const matchData = await runAIMatch(ocrData.items, userList);
 
+      setProcessingStep("reviewing");
       setValidationData(matchData);
       setProcessing(false);
       setShowModal(true);
@@ -224,8 +263,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       console.error(err);
       setError(err instanceof Error ? err.message : "Erro ao processar a imagem.");
       setProcessing(false);
+      setProcessingStep("idle");
     }
-  }, [getUserList, runAIMatch]);
+  }, [getUserList, resetReceiptState, runAIMatch]);
 
   // QR code scanner
   useEffect(() => {
@@ -240,8 +280,8 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       selectedCameraId || { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 250 } },
       (decodedText) => {
+        setProcessingStep("reading-qr");
         stopScanner().then(() => {
-          setScanResult(decodedText);
           processReceiptUrl(decodedText);
         });
       },
@@ -259,7 +299,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
     if (!open) {
-      setScanResult(null);
+      resetReceiptState();
     }
   };
 
@@ -267,7 +307,6 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     e.preventDefault();
     const url = urlInput.trim();
     if (!url) return;
-    setScanResult(url);
     processReceiptUrl(url);
   };
 
@@ -280,8 +319,10 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleSaveMatches = async (finalMatches: Array<{ user_item_id: string; sefaz_name: string; price: number }>, newItems?: NewItemSuggestion[]) => {
+    if (!user) return;
     try {
       setProcessing(true);
+      setProcessingStep("saving");
       setShowModal(false);
 
       const { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp, Timestamp } = await import("firebase/firestore");
@@ -337,6 +378,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
           const newItemRef = await addDoc(collection(db, "lists", listId, "items"), {
             name: newItem.suggested_name,
             status: "bought",
+            created_by: user.uid,
+            created_by_email: user.email ?? "",
+            created_by_photo: user.photoURL ?? "",
             averagePrice: newItem.price,
             priceHistory: [historyEntry],
             created_at: serverTimestamp(),
@@ -359,6 +403,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       console.error("Error saving matches:", err);
       setError("Erro ao salvar os itens.");
       setProcessing(false);
+      setProcessingStep("idle");
       setScanResult(null);
     }
   };
@@ -416,12 +461,23 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
         {processing ? (
           <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm w-full">
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-            <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Processando Nota...</h2>
+            <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">{PROCESSING_STEPS[processingStep].title}</h2>
             <p className="text-zinc-500 dark:text-zinc-400 text-center text-sm">
               {scanMode === "photo"
                 ? "Lendo a imagem com IA e identificando os produtos..."
                 : "Conectando à SEFAZ e utilizando IA para identificar os produtos..."}
             </p>
+            <div className="w-full mt-5 space-y-2">
+              {(["reading-qr", "loading-list", scanMode === "photo" ? "reading-image" : "fetching-sefaz", "matching", "reviewing"] as ProcessingStep[]).map((step) => {
+                const active = processingStep === step;
+                return (
+                  <div key={step} className={`flex items-center gap-2 text-xs ${active ? "text-primary font-bold" : "text-zinc-400 dark:text-zinc-500"}`}>
+                    <span className={`h-2 w-2 rounded-full ${active ? "bg-primary" : "bg-zinc-300 dark:bg-zinc-700"}`} />
+                    {PROCESSING_STEPS[step].title}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="w-full flex flex-col items-center">
@@ -442,7 +498,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
                     <Select
                       value={selectedCameraId ?? ""}
                       onValueChange={(value) => {
+                        if (!value) return;
                         stopScanner().finally(() => {
+                          window.localStorage.setItem(LAST_CAMERA_KEY, value);
                           setSelectedCameraId(value);
                           setError(null);
                           setScanResult(null);

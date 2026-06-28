@@ -18,10 +18,15 @@ export async function POST(request: NextRequest) {
     const adminApp = getApps()[0];
     const adminDb = getFirestore(adminApp);
 
-    // Get FCM tokens for all members except the sender
-    const recipientIds = (memberIds as string[]).filter((id: string) => id !== senderUid);
+    const listSnap = await adminDb.collection("lists").doc(listId).get();
+    const preferences = (listSnap.data()?.notification_preferences ?? {}) as Record<string, boolean>;
+
+    // Get FCM tokens for all members except the sender, respecting per-list opt-in.
+    const recipientIds = (memberIds as string[]).filter(
+      (id: string) => id !== senderUid && preferences[id] === true
+    );
     if (recipientIds.length === 0) {
-      return NextResponse.json({ sent: 0 });
+      return NextResponse.json({ sent: 0, reason: "no_opted_in_recipients" });
     }
 
     // Fetch tokens from fcm_tokens collection
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     const tokens = tokensSnapshot.docs.map((doc) => doc.data().token as string);
     if (tokens.length === 0) {
-      return NextResponse.json({ sent: 0 });
+      return NextResponse.json({ sent: 0, reason: "no_tokens" });
     }
 
     // Send push notification to all tokens
@@ -43,6 +48,9 @@ export async function POST(request: NextRequest) {
         body: `Adicionaram ${itemName} na lista ${listName}`,
       },
       webpush: {
+        fcmOptions: {
+          link: `/list/${listId}`,
+        },
         notification: {
           title: "Listinha",
           body: `Adicionaram ${itemName} na lista ${listName}`,
