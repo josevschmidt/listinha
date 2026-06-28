@@ -3,13 +3,43 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, use } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, type CameraDevice } from "html5-qrcode";
 import { ArrowLeft, Loader2, QrCode, ImageIcon, Link2, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ValidationModal, AIValidationData, NewItemSuggestion } from "@/app/components/dashboard/ValidationModal";
 
 type ScanMode = "qr" | "photo" | "url";
+
+function getCameraScore(camera: CameraDevice, index: number) {
+  const label = camera.label.toLowerCase();
+  let score = 100 - index;
+
+  if (/(back|rear|environment|traseira|traseiro)/.test(label)) score += 100;
+  if (/(front|user|selfie|frontal|face)/.test(label)) score -= 200;
+  if (/(ultra|ultrawide|ultra wide|0\.5|0,5|grande angular|wide angle)/.test(label)) score -= 80;
+  if (/(tele|telephoto|zoom|2x|3x|macro)/.test(label)) score -= 40;
+  if (/(back camera|rear camera|camera traseira|traseira principal|principal|main)/.test(label)) score += 60;
+
+  return score;
+}
+
+function pickPreferredCamera(cameras: CameraDevice[]) {
+  return cameras
+    .map((camera, index) => ({ camera, score: getCameraScore(camera, index) }))
+    .sort((a, b) => b.score - a.score)[0]?.camera ?? null;
+}
+
+function getCameraLabel(camera: CameraDevice, index: number) {
+  return camera.label || `Camera ${index + 1}`;
+}
 
 export default function ScannerPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -27,6 +57,9 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   const [showModal, setShowModal] = useState(false);
   const [emissionDate, setEmissionDate] = useState<string | null>(null);
   const [storeName, setStoreName] = useState<string | null>(null);
+  const [cameras, setCameras] = useState<CameraDevice[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
+  const [camerasLoaded, setCamerasLoaded] = useState(false);
 
   // URL mode
   const [urlInput, setUrlInput] = useState("");
@@ -56,6 +89,30 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!user || scanMode !== "qr" || camerasLoaded) return;
+
+    let cancelled = false;
+
+    Html5Qrcode.getCameras()
+      .then((devices) => {
+        if (cancelled) return;
+        setCameras(devices);
+        setSelectedCameraId((current) => current ?? pickPreferredCamera(devices)?.id ?? null);
+      })
+      .catch((err) => {
+        console.error("Camera list error:", err);
+        if (!cancelled) setCameras([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCamerasLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, scanMode, camerasLoaded]);
 
   const getUserList = useCallback(async () => {
     const { collection, getDocs } = await import("firebase/firestore");
@@ -173,12 +230,14 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
   // QR code scanner
   useEffect(() => {
     if (!user || scanMode !== "qr" || scanResult || processing || showModal) return;
+    if (!camerasLoaded) return;
+    if (cameras.length > 0 && !selectedCameraId) return;
 
     const qrCode = new Html5Qrcode("reader");
     qrCodeRef.current = qrCode;
 
     qrCode.start(
-      { facingMode: "environment" },
+      selectedCameraId || { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 250 } },
       (decodedText) => {
         stopScanner().then(() => {
@@ -195,7 +254,7 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
     return () => {
       stopScanner();
     };
-  }, [user, scanMode, scanResult, processing, showModal, processReceiptUrl, stopScanner]);
+  }, [user, scanMode, scanResult, processing, showModal, camerasLoaded, cameras.length, selectedCameraId, processReceiptUrl, stopScanner]);
 
   const handleValidationOpenChange = (open: boolean) => {
     setShowModal(open);
@@ -372,6 +431,38 @@ export default function ScannerPage({ params }: { params: Promise<{ id: string }
                 <p className="text-zinc-600 dark:text-zinc-300 text-center mb-4 text-sm">
                   Aponte a câmera para o QR Code da nota fiscal eletrônica (NFC-e)
                 </p>
+                {!camerasLoaded && (
+                  <div className="w-full mb-3 flex items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Carregando cameras...
+                  </div>
+                )}
+                {cameras.length > 1 && (
+                  <div className="w-full mb-3">
+                    <Select
+                      value={selectedCameraId ?? ""}
+                      onValueChange={(value) => {
+                        stopScanner().finally(() => {
+                          setSelectedCameraId(value);
+                          setError(null);
+                          setScanResult(null);
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-11 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                        <Camera className="w-4 h-4 text-zinc-500" />
+                        <SelectValue placeholder="Escolher camera" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cameras.map((camera, index) => (
+                          <SelectItem key={camera.id} value={camera.id}>
+                            {getCameraLabel(camera, index)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div
                   id="reader"
                   className="w-full rounded-xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800"
