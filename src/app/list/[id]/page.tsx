@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -200,6 +200,11 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [sortBy, setSortBy] = useState<SortKey>("category");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  // Items re-marked as pending stay in the done section for a moment before moving up
+  const [heldIds, setHeldIds] = useState<Set<string>>(new Set());
+  const holdTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Visible item used to keep the viewport still when the list reorders
+  const scrollAnchorRef = useRef<{ id: string; top: number } | null>(null);
 
   // Item modal
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -362,13 +367,17 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const priceInsights = isShoppingList ? getPriceInsights(items) : [];
   const selectedPriceStats = getPriceStats(selectedItem);
 
+  const sortStatus = (item: Item) => (heldIds.has(item.id) ? "bought" : item.status);
+
   const visibleItems = items
     .filter((item) => undoState?.item.id !== item.id) // hide item pending undo
     .filter((item) => !search || item.name.toLowerCase().includes(search.toLowerCase()))
     .filter((item) => !categoryFilter || item.category === categoryFilter)
     .sort((a, b) => {
       // Always show pending items on top, bought items on bottom
-      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+      const statusA = sortStatus(a);
+      const statusB = sortStatus(b);
+      if (statusA !== statusB) return statusA === "pending" ? -1 : 1;
       if (sortBy === "az") return a.name.localeCompare(b.name, "pt-BR");
       if (sortBy === "category") {
         // Sort by category order, then alphabetically within each category
@@ -567,9 +576,67 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
+  // ── Keep viewport still on reorder ──────────────────────────────────────────
+  // Remembers the first visible item (other than the one moving) so the list
+  // doesn't scroll along with the moved item.
+  const captureScrollAnchor = (movingId: string) => {
+    const els = document.querySelectorAll<HTMLElement>("[data-item-id]");
+    for (const el of Array.from(els)) {
+      if (el.dataset.itemId === movingId) continue;
+      const top = el.getBoundingClientRect().top;
+      if (top >= 0) {
+        scrollAnchorRef.current = { id: el.dataset.itemId!, top };
+        return;
+      }
+    }
+    scrollAnchorRef.current = null;
+  };
+
+  useLayoutEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    if (!anchor) return;
+    const el = document.querySelector<HTMLElement>(`[data-item-id="${anchor.id}"]`);
+    if (!el) return;
+    scrollAnchorRef.current = null;
+    const delta = el.getBoundingClientRect().top - anchor.top;
+    if (delta !== 0) window.scrollTo({ top: window.scrollY + delta, behavior: "instant" });
+  }, [items, heldIds]);
+
+  useEffect(() => {
+    const timers = holdTimersRef.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  const releaseHeldItem = (id: string) => {
+    holdTimersRef.current.delete(id);
+    captureScrollAnchor(id);
+    setHeldIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   // ── Toggle status ───────────────────────────────────────────────────────────
   const toggleItemStatus = async (item: Item) => {
     const newStatus = item.status === "pending" ? "bought" : "pending";
+    const existingTimer = holdTimersRef.current.get(item.id);
+    if (existingTimer) clearTimeout(existingTimer);
+    if (newStatus === "pending") {
+      // Hold the item in place briefly, then let it move up to the pending section
+      setHeldIds((prev) => new Set(prev).add(item.id));
+      holdTimersRef.current.set(item.id, setTimeout(() => releaseHeldItem(item.id), 1000));
+    } else {
+      if (existingTimer) {
+        holdTimersRef.current.delete(item.id);
+        setHeldIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }
+      captureScrollAnchor(item.id);
+    }
     try {
       if (isTodoList && newStatus === "bought") {
         // For todo lists, record completion timestamp and history
@@ -1279,6 +1346,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             visibleItems.map((item) => (
               <div
                 key={item.id}
+                data-item-id={item.id}
                 className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200 ${
                   item.status === "bought"
                     ? "bg-muted/20 border-transparent text-muted-foreground opacity-60 scale-[0.99]"
