@@ -200,6 +200,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [sortBy, setSortBy] = useState<SortKey>("category");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  // Items re-marked as pending stay where they were (in the done section) until
+  // the user changes sort/filter/search or adds an item, so the list doesn't jump.
+  const [keepInPlace, setKeepInPlace] = useState<{ context: string; ids: Set<string> }>({ context: "", ids: new Set() });
 
   // Item modal
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -362,13 +365,19 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const priceInsights = isShoppingList ? getPriceInsights(items) : [];
   const selectedPriceStats = getPriceStats(selectedItem);
 
+  const sortContext = `${sortBy}|${categoryFilter ?? ""}|${search}`;
+  const keepInPlaceIds = keepInPlace.context === sortContext ? keepInPlace.ids : null;
+  const sortStatus = (item: Item) => (keepInPlaceIds?.has(item.id) ? "bought" : item.status);
+
   const visibleItems = items
     .filter((item) => undoState?.item.id !== item.id) // hide item pending undo
     .filter((item) => !search || item.name.toLowerCase().includes(search.toLowerCase()))
     .filter((item) => !categoryFilter || item.category === categoryFilter)
     .sort((a, b) => {
       // Always show pending items on top, bought items on bottom
-      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+      const statusA = sortStatus(a);
+      const statusB = sortStatus(b);
+      if (statusA !== statusB) return statusA === "pending" ? -1 : 1;
       if (sortBy === "az") return a.name.localeCompare(b.name, "pt-BR");
       if (sortBy === "category") {
         // Sort by category order, then alphabetically within each category
@@ -529,6 +538,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     }
 
     const categoryToSave = addCategory || aiSuggestedCategory;
+    setKeepInPlace({ context: "", ids: new Set() });
     setNewItemName("");
     setAddQty("");
     setAddUnit("");
@@ -570,6 +580,13 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   // ── Toggle status ───────────────────────────────────────────────────────────
   const toggleItemStatus = async (item: Item) => {
     const newStatus = item.status === "pending" ? "bought" : "pending";
+    if (newStatus === "pending") {
+      setKeepInPlace((prev) => {
+        const ids = new Set(prev.context === sortContext ? prev.ids : []);
+        ids.add(item.id);
+        return { context: sortContext, ids };
+      });
+    }
     try {
       if (isTodoList && newStatus === "bought") {
         // For todo lists, record completion timestamp and history
